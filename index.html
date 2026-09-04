@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#101823">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Recon Calc">
+<meta name="robots" content="noindex, nofollow">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="favicon-32.png" sizes="32x32">
+<title>Reconstitution and dose calculator</title>
+<style>
+  :root{
+    --ground:#101823; --panel:#18222F; --panel-2:#1E2A39; --line:#2C3A4B;
+    --text:#E6EDF5; --muted:#8A9CB0;
+    --fluid:#6FD2E2; --fluid-dim:#37697A;
+    --amber:#E8B84B; --stop:#E0705E; --blue:#77AEE0; --gray:#7C8B9C;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--ground);color:var(--text);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:16px;line-height:1.45;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  .wrap{max-width:560px;margin:0 auto;padding:20px 16px 56px}
+  header{margin-bottom:20px}
+  h1{font-size:1.4rem;font-weight:620;letter-spacing:-0.015em;margin:0 0 6px}
+  header p{margin:0;color:var(--muted);font-size:0.86rem;max-width:46ch}
+
+  .field{border-top:1px solid var(--line);padding:14px 0 15px}
+  .field:first-of-type{border-top:none}
+  .field > label{display:block;font-size:0.8rem;color:var(--muted);margin-bottom:7px}
+  select,input[type=number]{
+    width:100%;background:var(--panel);color:var(--text);
+    border:1px solid var(--line);border-radius:9px;padding:13px 12px;
+    font-size:1.02rem;font-family:inherit;appearance:none;-webkit-appearance:none;
+  }
+  select{
+    background-image:url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%238A9CB0' stroke-width='1.6'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 13px center;padding-right:36px;
+  }
+  select:focus-visible,input:focus-visible,button:focus-visible{outline:2px solid var(--fluid);outline-offset:2px}
+  .hint{font-size:0.78rem;color:var(--muted);margin-top:8px}
+
+  .seg{display:flex;gap:6px}
+  .seg button{
+    flex:1;background:var(--panel);border:1px solid var(--line);border-radius:9px;
+    color:var(--muted);font-family:inherit;font-size:0.9rem;padding:12px 4px;cursor:pointer;
+  }
+  .seg button[aria-pressed=true]{background:var(--panel-2);border-color:var(--fluid-dim);color:var(--text);box-shadow:inset 0 0 0 1px var(--fluid-dim)}
+  .seg small{display:block;font-size:0.68rem;color:var(--muted);margin-top:2px}
+  .seg button.dim small{color:#6B7C8E}
+  .row{display:flex;gap:10px}
+  .row > div{flex:1}
+
+  .evidence{
+    display:block;background:var(--panel);border-left:3px solid var(--gray);
+    border-radius:0 8px 8px 0;padding:11px 13px;margin:2px 0;
+    font-size:0.82rem;color:var(--muted);
+  }
+  .evidence strong{display:block;color:var(--text);font-weight:560;margin-bottom:2px}
+  .ev-conversation{border-left-color:var(--fluid)}
+  .ev-evidence{border-left-color:var(--blue)}
+  .ev-ne{border-left-color:var(--gray)}
+
+  .readout{
+    margin:22px 0 6px;background:linear-gradient(180deg,#16202C,#131C27);
+    border:1px solid var(--line);border-radius:14px;padding:16px 14px 12px;
+  }
+  .readout.blank{opacity:0.62}
+  svg.syringe{display:block;width:100%;height:auto}
+  .fill{transition:width .28s ease}
+  #stopper{transition:x .28s ease}
+  @media (prefers-reduced-motion:reduce){.fill,#stopper{transition:none}}
+
+  .numbers{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+  .units{
+    font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    font-size:3.1rem;line-height:1;font-weight:600;letter-spacing:-0.03em;color:var(--fluid);
+  }
+  .units span{font-size:0.95rem;font-weight:400;color:var(--muted);margin-left:6px;letter-spacing:0}
+  .units.over{color:var(--stop)}
+  .units.blank{color:var(--muted)}
+  .draw{text-align:right;font-size:0.82rem;color:var(--muted);max-width:20ch}
+
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:14px}
+  .stat{background:var(--panel);padding:11px 12px}
+  .stat b{display:block;font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;font-size:1rem;font-weight:600;letter-spacing:-0.01em}
+  .stat span{font-size:0.74rem;color:var(--muted)}
+
+  .flag{margin-top:12px;border-radius:9px;padding:11px 13px;font-size:0.83rem;line-height:1.5}
+  .flag-warn{background:rgba(232,184,75,.09);border:1px solid rgba(232,184,75,.32);color:#F0D18E}
+  .flag-stop{background:rgba(224,112,94,.09);border:1px solid rgba(224,112,94,.32);color:#F0A79A}
+  .flag-info{background:var(--panel);border:1px solid var(--line);color:var(--muted)}
+
+  details{margin-top:12px;border-top:1px solid var(--line);padding-top:12px}
+  summary{cursor:pointer;font-size:0.86rem;color:var(--muted);list-style:none}
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:"+ ";color:var(--fluid-dim)}
+  details[open] summary::before{content:"– "}
+  details p,details li{font-size:0.82rem;color:var(--muted);line-height:1.55}
+  details ul{padding-left:18px;margin:8px 0}
+  .revrow{display:flex;gap:10px;align-items:center;margin-top:10px}
+  .revrow input{max-width:120px}
+  .revout{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:0.95rem;color:var(--fluid)}
+  .actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+  .actions button{
+    flex:1;min-width:130px;background:var(--panel);border:1px solid var(--line);
+    border-radius:9px;color:var(--text);font-family:inherit;font-size:0.88rem;
+    padding:12px 10px;cursor:pointer;
+  }
+  .actions button:hover{border-color:var(--fluid-dim)}
+  .actions button:disabled{color:#5A6B7D;cursor:not-allowed;border-color:var(--line)}
+  .actions button.danger{color:#E0705E}
+  .actions button.on{background:var(--panel-2);border-color:var(--fluid-dim);color:var(--fluid)}
+
+  .strip{
+    margin-top:14px;background:var(--panel);border:1px solid var(--line);
+    border-left:3px solid var(--fluid);border-radius:0 9px 9px 0;padding:11px 13px;font-size:0.83rem;
+  }
+  .strip b{color:var(--text);font-weight:560}
+  .strip .sub{color:var(--muted);margin-top:3px;font-size:0.79rem}
+  .strip button{
+    background:none;border:none;color:var(--muted);font-family:inherit;
+    font-size:0.78rem;padding:6px 0 0;cursor:pointer;text-decoration:underline;
+  }
+  .strip.stale{border-left-color:var(--amber)}
+
+  .logrow{display:flex;justify-content:space-between;gap:10px;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--line)}
+  .logrow:last-child{border-bottom:none}
+  .logrow .when{color:var(--muted);font-size:0.78rem}
+  .logrow .what{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:0.86rem;color:var(--text)}
+  .logrow button{background:none;border:none;color:var(--muted);font-size:1rem;cursor:pointer;padding:0 2px}
+  textarea{
+    width:100%;background:var(--panel);color:var(--text);border:1px solid var(--line);
+    border-radius:9px;padding:11px;font-family:ui-monospace,Menlo,Consolas,monospace;
+    font-size:0.76rem;margin-top:8px;resize:vertical;
+  }
+  footer{margin-top:24px;font-size:0.75rem;color:var(--muted);line-height:1.6}
+  .hide{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Reconstitution and dose calculator</h1>
+  <p>A unit calculator for a 1 mL U-100 syringe, where 100 units equals 1 mL and 1 unit equals 0.01 mL. Every value is read from one private reference sheet dated August 2026.</p>
+</header>
+
+<div class="field">
+  <label for="compound">Peptide</label>
+  <select id="compound"></select>
+</div>
+
+<div id="evidence" class="evidence"></div>
+
+<div class="field">
+  <div class="row">
+    <div>
+      <label for="vial">Vial strength</label>
+      <select id="vial"></select>
+    </div>
+    <div>
+      <label for="bac">Bacteriostatic water</label>
+      <select id="bac"></select>
+    </div>
+  </div>
+  <div id="customWrap" hidden>
+    <label for="customMg" style="display:block;font-size:0.8rem;color:var(--muted);margin:12px 0 7px">Verified vial strength in mg</label>
+    <input type="number" id="customMg" min="0.01" step="0.1" value="5">
+  </div>
+  <div class="hint" id="concHint"></div>
+</div>
+
+<div class="field">
+  <label for="grad">Syringe graduation</label>
+  <select id="grad">
+    <option value="1">Marked every 1 unit</option>
+    <option value="2">Marked every 2 units</option>
+    <option value="0.5">Marked every half unit</option>
+  </select>
+  <div class="hint">Sets what the app rounds the draw-to figure onto. Most 1 mL U-100 barrels are marked every 2 units.</div>
+</div>
+
+<div class="field">
+  <label for="strength">Dose level</label>
+  <div class="seg" id="strength">
+    <button type="button" data-level="beginner" aria-pressed="true">Beginner<small></small></button>
+    <button type="button" data-level="standard" aria-pressed="false">Standard<small></small></button>
+    <button type="button" data-level="aggressive" aria-pressed="false">Aggressive<small></small></button>
+  </div>
+</div>
+
+<div class="field hide" id="weightField">
+  <label for="weight">Body weight</label>
+  <div class="row">
+    <div><input type="number" id="weight" min="1" step="1" value="180"></div>
+    <div class="seg" id="wUnit" style="max-width:130px">
+      <button type="button" data-u="lb" aria-pressed="true">lb</button>
+      <button type="button" data-u="kg" aria-pressed="false">kg</button>
+    </div>
+  </div>
+  <div class="hint">This compound's dose is per kilogram, so weight is needed before units can be calculated.</div>
+</div>
+
+<div class="readout" id="readout">
+  <svg class="syringe" viewBox="0 0 372 104" role="img" aria-labelledby="svgtitle">
+    <title id="svgtitle">U-100 syringe showing the fill mark for the calculated dose</title>
+    <rect x="4" y="46.4" width="30" height="3.2" rx="1.4" fill="#63748A"/>
+    <path d="M34 40 L48 43 L48 53 L34 56 Z" fill="#3B4A5C"/>
+    <rect x="48" y="28" width="280" height="40" rx="4" fill="#0C1520" stroke="#3A4A5C" stroke-width="1.2"/>
+    <rect class="fill" id="fluid" x="49.2" y="29.2" width="0" height="37.6" rx="3" fill="#6FD2E2" opacity="0.62"/>
+    <rect id="stopper" x="49" y="27" width="7" height="42" rx="2" fill="#8FA3B8"/>
+    <rect x="328" y="44" width="30" height="8" rx="2" fill="#3B4A5C"/>
+    <rect x="356" y="30" width="8" height="36" rx="3" fill="#4C5D71"/>
+    <g id="ticks"></g>
+  </svg>
+  <div class="numbers">
+    <div class="units" id="unitsOut">0.0<span>units</span></div>
+    <div class="draw" id="drawOut">Pick a peptide to begin.</div>
+  </div>
+</div>
+
+<div id="vialStrip"></div>
+
+<div class="actions">
+  <button type="button" id="btnMix">Set as my current vial</button>
+  <button type="button" id="btnLog">Log this dose</button>
+</div>
+
+<div class="stats">
+  <div class="stat"><b id="sConc">—</b><span>Concentration after mixing</span></div>
+  <div class="stat"><b id="sPerU">—</b><span>Per 1 unit on the syringe</span></div>
+  <div class="stat"><b id="sDose">—</b><span>Dose at this level</span></div>
+  <div class="stat"><b id="sVial">—</b><span>Doses per vial</span></div>
+</div>
+
+<div id="flags"></div>
+
+<details id="histWrap">
+  <summary id="histSummary">Dose history</summary>
+  <div id="histBody"></div>
+</details>
+
+<details id="notes">
+  <summary>History and status for this peptide</summary>
+  <div id="noteBody"></div>
+</details>
+
+<details>
+  <summary>Convert a unit amount back to milligrams</summary>
+  <p>Useful for the unit-only history in your sheet, such as tirzepatide at 35 U, GHK-Cu at 25 U, and the corrected 4 U nightly for CJC with ipamorelin. This uses the vial and water currently selected above.</p>
+  <div class="revrow">
+    <input type="number" id="revU" min="0" step="0.5" value="35">
+    <span style="color:var(--muted);font-size:0.85rem">units equals</span>
+    <span class="revout" id="revOut">—</span>
+  </div>
+</details>
+
+<details>
+  <summary>Back up or move your saved data</summary>
+  <p>Everything you save stays on this device in this browser only. It is not uploaded anywhere. Clearing the browser's site data, or opening the app from a different browser, means starting empty. Copy this text somewhere safe to move it or keep a backup.</p>
+  <textarea id="ioBox" rows="4" spellcheck="false" placeholder="Your saved data appears here"></textarea>
+  <div class="actions">
+    <button type="button" id="btnExport">Show my data</button>
+    <button type="button" id="btnImport">Load from the box</button>
+    <button type="button" id="btnWipe" class="danger">Erase everything</button>
+  </div>
+  <p id="ioMsg"></p>
+</details>
+
+<details>
+  <summary>How this calculates, and how to save it to your phone</summary>
+  <p><b>If this was forwarded to you:</b> this is a calculator, not a protocol. It converts a vial strength and a volume of bacteriostatic water into a mark on a syringe. The dose tiers labelled Beginner, Standard and Aggressive are copied from one person's private reference sheet — some are drug-label or trial amounts, and some are that individual's own recorded numbers, which the badge under the peptide name tells you. None of them are recommendations, and none were reviewed by a clinician for anyone else.</p>
+  <p><b>Formula:</b> units = (dose ÷ vial content) × (water in mL × 100). Combination vials calculate against the individual component, not the combined milligrams, so a 5 mg + 5 mg blend is measured against 5 mg.</p>
+  <p><b>Dose levels</b> follow your sheet's Beginner, Standard and Aggressive columns. Where the sheet recovered a value from your prior conversations, that value is used ahead of the clinical-evidence tier, which is what the v3 merge was for.</p>
+  <p><b>Blank results</b> mean the sheet marked that tier N/E: no defensible self-injection amount was established and no prior conversation value was recovered. The mixing math still shows, since concentration is arithmetic.</p>
+  <p><b>Portable use:</b> one self-contained file, nothing loaded from the internet. Copy it to a USB stick, a phone, or a cloud folder and it works fully offline.</p>
+  <ul>
+    <li><b>iPhone:</b> open the link in Safari, then Share, then Add to Home Screen. It installs a real icon and opens full screen with no address bar.</li>
+    <li><b>Android:</b> open the link in Chrome, then menu, then Add to Home screen or Install app.</li>
+    <li><b>Offline:</b> once it has loaded a single time, it keeps working with no signal. It refreshes itself the next time you open it with a connection.</li>
+    <li><b>Windows:</b> double-click it, or pin the file to Start. Runs from any folder or removable drive.</li>
+  </ul>
+</details>
+
+<footer>
+  Reconstitution volumes for research vials are concentration math, not manufacturer instructions, and do not establish sterility, solubility, stability or equivalence to an approved formulation. This tool does arithmetic on one private reference document. It is not medical advice, and it is not a substitute for a clinician who knows the person injecting.
+</footer>
+
+</div>
+
+<script>
+const NE = null;
+
+const STATUS = {
+  conversation:{cls:"ev-conversation", label:"One person's recorded protocol",
+    text:"These numbers came from the sheet owner's own past notes, not from a drug label or a published trial. They describe what one individual worked out for themselves."},
+  evidence:{cls:"ev-evidence", label:"From clinical evidence",
+    text:"No personal protocol was recorded, so the source sheet keeps the FDA-label or published human-trial amount."},
+  ne:{cls:"ev-ne", label:"No established dose",
+    text:"The source sheet found no defensible self-injection amount and recorded none. The mixing math below still applies."}
+};
+
+/* d: mg per administration, or mcg/kg or mg/kg when perKg is set, or {u: n} for a unit-only dose */
+const DATA = [
+{g:"Metabolic and weight management", items:[
+
+ {n:"Semaglutide", st:"evidence", vials:[5,10,15,20,30], recon:{5:1,10:1,15:1.5,20:2,30:1.5},
+  d:{beginner:0.25, standard:2.4, aggressive:7.2}, sched:"once weekly",
+  note:"The vendor research vial is not the FDA-approved prefilled product. The reconstitution shown is concentration math, not manufacturer instructions."},
+
+ {n:"Tirzepatide", st:"evidence", vials:[5,10,15,20,30,40,50,60], recon:{5:1,10:1,15:1.5,20:2,30:1.5,40:2,50:2.5,60:3},
+  d:{beginner:2.5, standard:10, aggressive:15}, sched:"once weekly",
+  note:"Your reported historical amount was 35 U once weekly. A prior calculation treated that as 3.5 mg only by assuming 10 mg/mL, and that concentration was never confirmed, so 35 U is not forced into the labeled tiers here. Use the unit-to-milligram converter below against whatever vial and water you actually used.",
+  hist:{units:35, label:"35 U once weekly, user-reported"}},
+
+ {n:"Retatrutide", st:"conversation", vials:[5,10,15,20,30,40,50,60], recon:{5:1,10:1,15:1.5,20:2,30:1.5,40:2,50:2.5,60:3},
+  d:{beginner:2, standard:9, aggressive:12}, sched:"once weekly",
+  note:"Recovered setup from 23 August 2026: 30 mg plus 1.5 mL gives 20 mg/mL, so 1 U is 0.2 mg. The discussed weekly ladder was 2 mg at 10 U, 4 mg at 20 U, 6 mg at 30 U, 9 mg at 45 U and 12 mg at 60 U, in four-week steps. That discussion specifically did not use a milligram-for-milligram conversion from tirzepatide."},
+
+ {n:"Cagrilintide", st:"evidence", vials:[5,10], recon:{5:1,10:1},
+  d:{beginner:0.3, standard:2.4, aggressive:4.5}, sched:"once weekly",
+  note:"Investigational. The tiers represent studied doses."},
+
+ {n:"Cagrilintide + Semaglutide (5 mg + 5 mg)", parts:2, st:"evidence", vials:[10], comp:{10:5}, compName:"each component",
+  vialLabels:{10:"5 mg + 5 mg (10 mg total)"}, recon:{10:1},
+  d:{beginner:0.25, standard:1.0, aggressive:2.4}, sched:"once weekly", perComp:true,
+  note:"Doses are per component: 250 mcg each, 1000 mcg each, then 2400 mcg each. The vendor blend is not the clinical CagriSema formulation."},
+
+ {n:"Survodutide", st:"evidence", vials:[10], recon:{10:1},
+  d:{beginner:0.6, standard:3.6, aggressive:6}, sched:"once weekly",
+  note:"Investigational. The tiers are studied or target doses."},
+
+ {n:"AOD9604", st:"ne", vials:[5,10], recon:{5:1,10:1}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"No current validated human injectable start, standard or high regimen was located."},
+
+ {n:"hGH Fragment 176-191", st:"ne", vials:[5], recon:{5:1}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"No reliable human injectable dose for the exact unmodified fragment was established."},
+
+ {n:"Adipotide", st:"ne", vials:[5], recon:{5:1}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"No reliable human clinical injectable dose was located."}
+]},
+
+{g:"Growth-hormone axis", items:[
+
+ {n:"CJC-1295 with DAC", st:"evidence", vials:[5], recon:{5:2}, perKg:"mcg",
+  d:{beginner:30, standard:NE, aggressive:60}, sched:"per study administration",
+  neReason:{standard:"The cited trial defined no middle dose."},
+  note:"Long-acting CJC-1295 with DAC only. Requires body weight. Do not transfer these values to the without-DAC product."},
+
+ {n:"CJC-1295 without DAC", st:"ne", vials:[5,10], recon:{5:1,10:1}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"No validated human clinical subcutaneous regimen for the vendor without-DAC product was located."},
+
+ {n:"CJC-1295 without DAC + Ipamorelin", parts:2, st:"conversation", vials:[10,20], comp:{10:5,20:10}, compName:"each component",
+  vialLabels:{10:"5 mg + 5 mg (10 mg total)",20:"10 mg + 10 mg (20 mg total)"}, recon:{10:2,20:2},
+  d:{beginner:NE, standard:{u:4}, aggressive:NE}, sched:"nightly", perComp:true,
+  neReason:{beginner:"Only the corrected nightly amount was recovered.", aggressive:"Only the corrected nightly amount was recovered."},
+  note:"Two full U-100 syringes of bacteriostatic water, which is 2 mL, were discussed. An earlier figure of 40 units nightly was corrected to 4 U nightly. At 5 mg plus 5 mg in 2 mL, 4 U carries 100 mcg of each component; at 10 mg plus 10 mg in 2 mL, 4 U carries 200 mcg of each. The exact vial strength in the recovered thread was never established, so both are offered here."},
+
+ {n:"Ipamorelin", st:"ne", vials:[5,10], recon:{5:1,10:1}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"The human dose-escalation evidence located used IV infusion and does not establish a home subcutaneous bolus regimen."},
+
+ {n:"Sermorelin acetate", st:"ne", vials:[5,10], recon:{5:1,10:1}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"The published subcutaneous data cited were pediatric and do not establish an adult start, standard or high regimen."},
+
+ {n:"IGF-1 LR3", st:"ne", vials:[0.1,1], recon:{0.1:1,1:1}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"No reliable human clinical injectable regimen was located. Do not substitute mecasermin dosing."},
+
+ {n:"Tesamorelin", st:"ne", vials:[5,10,20], recon:{5:1,10:1,20:2}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"The approved EGRIFTA SV 2 mg product uses product-specific sterile-water instructions. Do not scale them to these research-vial strengths."},
+
+ {n:"Hexarelin", st:"evidence", vials:[5,10], recon:{5:2,10:2}, perKg:"mcg",
+  d:{beginner:1.5, standard:NE, aggressive:3}, sched:"per study administration",
+  neReason:{standard:"The study tested two levels only."},
+  note:"Study data do not establish an approved chronic regimen."},
+
+ {n:"GHRP-2", st:"ne", vials:[5,10,15], recon:{5:1,10:1,15:1.5}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"The human study used continuous subcutaneous infusion. It should not be converted into a once-daily bolus regimen."},
+
+ {n:"GHRP-6", st:"ne", vials:[5,10], recon:{5:1,10:1}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"Human endocrine studies were primarily IV. No validated home subcutaneous regimen follows from them."}
+]},
+
+{g:"Repair, wound, antimicrobial", items:[
+
+ {n:"BPC-157", st:"conversation", vials:[5,10,15], recon:{5:1,10:2,15:3},
+  d:{beginner:0.25, standard:0.5, aggressive:1}, sched:"daily",
+  note:"Recovered history: 15 mg plus 3 mL gives 5 mg/mL, where 10 U is 0.5 mg and 20 U is 1 mg. A separate 10 mg plus 2 mL calculation also gave 10 U as 500 mcg. The 1 mg per day level was discussed as 10 U in the morning plus 10 U in the evening, or 20 U once daily. Combined BPC and TB use was reported without side effects, but the exact standalone BPC amount actually used was not confirmed."},
+
+ {n:"BPC-157 + TB-500 blend", parts:2, st:"conversation", vials:[10,20], comp:{10:5,20:10}, compName:"each component",
+  vialLabels:{10:"5 mg BPC + 5 mg TB (10 mg total)",20:"10 mg BPC + 10 mg TB (20 mg total)"}, recon:{10:2,20:2},
+  d:{beginner:0.25, standard:0.5, aggressive:0.5}, perComp:true,
+  sched:{beginner:"daily for days 1 to 7", standard:"daily for weeks 2 to 4", aggressive:"daily up to week 6"},
+  note:"For the 5 mg plus 5 mg vial in 2 mL, 10 U carries 250 mcg of BPC plus 250 mcg of TB, and 20 U carries 500 mcg of each. The cycle discussed was four to six weeks on, then two to four weeks off. Later combined use was confirmed, but the exact blend dose actually used was not recovered."},
+
+ {n:"TB-500 / Thymosin beta-4 acetate", st:"conversation", vials:[5,10], recon:{5:1,10:2},
+  d:{beginner:2, standard:2.5, aggressive:2.5},
+  sched:{beginner:"twice weekly", standard:"twice weekly", aggressive:"every 3 to 4 days for about 5 weeks"},
+  note:"Recovered setup from 23 May 2026: 10 mg plus 2 mL gives 5 mg/mL, where 10 U is 0.5 mg, 20 U is 1 mg and 50 U is 2.5 mg. The loading discussion was 50 U every three to four days, roughly twice weekly, for five weeks. An optional maintenance of 20 to 40 U weekly was also discussed."},
+
+ {n:"GHK-Cu", st:"conversation", vials:[50,100], recon:{50:1.5,100:3},
+  d:{beginner:1, standard:3, aggressive:5},
+  sched:{beginner:"5 days on, 2 days off", standard:"5 days on, 2 days off", aggressive:"5 days on, 2 days off for 4 weeks"},
+  note:"Recovered setup from 4 August 2026: 100 mg plus 3 mL gives 33.33 mg/mL, where 1 mg is 3 U, 2 mg is 6 U, 3 mg is 9 U and 5 mg is 15 U. The four-week five-on two-off plan has 20 dosing days, so 5 mg per dosing day finishes a 100 mg vial exactly. In a later follow-up you reported actually taking 25 U from the 100 mg vial, but the water amount in use at that moment was not recovered, so 25 U is kept as history without an assigned milligram value.",
+  hist:{units:25, label:"25 U reported from the 100 mg vial, water amount unknown"}},
+
+ {n:"TB 10 + BPC 10 + GHK-Cu 50", st:"ne", vials:[70], recon:{70:2}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"No human combination trial was located."},
+
+ {n:"TB 10 + BPC 10 + GHK-Cu 50 + KPV 10", st:"ne", vials:[80], recon:{80:2}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"No human combination trial was located."},
+
+ {n:"KPV", st:"ne", vials:[10], recon:{10:1}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"The published evidence located was preclinical or cell work. No reliable human injectable regimen was found."},
+
+ {n:"LL-37", st:"ne", vials:[], unverified:true, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"Vendor strength is unclear and the human evidence located was topical, not injectable. Enter a verified strength if you confirm one, and the mixing math will still work."}
+]},
+
+{g:"Neuroactive and melanocortin", items:[
+
+ {n:"MT-1 / Melanotan-I", st:"ne", vials:[], unverified:true, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"Vendor vial strength is unclear in the source list, so no reliable vendor-vial U-100 conversion exists. Enter a verified strength if you confirm one."},
+
+ {n:"MT-2 / Melanotan-II", st:"evidence", vials:[10], recon:{10:2}, perKg:"mg",
+  d:{beginner:0.01, standard:0.025, aggressive:0.03}, sched:"per study administration",
+  note:"Small early human study. The higher dose produced notable adverse effects in at least one subject."},
+
+ {n:"PT-141 / Bremelanotide", st:"conversation", vials:[10], recon:{10:2},
+  d:{beginner:1.75, standard:1.75, aggressive:1.75},
+  sched:{beginner:"as needed, at least 45 minutes before anticipated activity", standard:"as needed, maximum 1 dose in 24 hours", aggressive:"as needed; more than 8 doses per month is not recommended"},
+  note:"A prior calculation used 10 mg plus 2 mL for 5 mg/mL. At that concentration the FDA-labeled 1.75 mg comparator equals 35 U. No prior statement confirming personal PT-141 use was recovered, so all three tiers hold the same labeled comparator amount and differ only in timing guidance."},
+
+ {n:"Selank", st:"ne", vials:[5,10], recon:{5:1,10:1}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"A 5 mg option was discussed as a way to round out the cycle, and 10 mg also appeared in prior material. No bacteriostatic-water amount, U-100 dose or schedule was recovered, so the tiers stay N/E rather than being invented."},
+
+ {n:"Semax", st:"ne", vials:[5,10], recon:{5:1,10:1}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"The human evidence located was intranasal, not subcutaneous injection."},
+
+ {n:"DSIP", st:"ne", vials:[5,10], recon:{5:1,10:1}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"The human study data located used IV bolus in monitored research and should not be converted to home subcutaneous dosing."},
+
+ {n:"Dermorphin", st:"ne", vials:[5], recon:{5:1}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"A potent opioid peptide studied by monitored IV infusion. No home-injection conversion is provided."},
+
+ {n:"SNAP-8", st:"ne", vials:[10], recon:{10:1}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"Cosmetic and topical evidence only. No reliable injectable regimen was located."}
+]},
+
+{g:"Immune, endocrine, mitochondrial", items:[
+
+ {n:"Thymosin alpha-1 / Thymalfasin", st:"evidence", vials:[5,10], recon:{5:1,10:1},
+  d:{beginner:1.6, standard:1.6, aggressive:NE}, sched:"twice weekly",
+  neReason:{aggressive:"Published schedules vary by indication, so the sheet sets no high tier."},
+  note:"Published schedules vary by indication. This is not a generic wellness dose."},
+
+ {n:"ARA-290 / Cibinetide", st:"evidence", vials:[10], recon:{10:1},
+  d:{beginner:1, standard:4, aggressive:8}, sched:"daily",
+  note:"Investigational. The values are studied doses."},
+
+ {n:"SS-31 / Elamipretide", st:"evidence", vials:[10,50], recon:{10:1,50:1},
+  d:{beginner:4, standard:NE, aggressive:40}, sched:"daily",
+  neReason:{standard:"The cited trial compared 4 mg and 40 mg with nothing in between."},
+  note:"The cited trial compared 4 mg and 40 mg daily. The higher dose is not a general-use recommendation."},
+
+ {n:"Kisspeptin-10", st:"ne", vials:[5,10], recon:{5:1,10:1}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"Human studies used IV bolus, IV infusion or research infusion. No validated self-bolus U-100 regimen follows."},
+
+ {n:"VIP", st:"ne", vials:[10], recon:{10:1}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"The human evidence located used monitored IV infusion. Do not translate it to subcutaneous dosing."},
+
+ {n:"Oxytocin acetate", st:"ne", vials:[5,10], recon:{5:1,10:1}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"The vendor milligram vial is not directly equivalent to the approved USP-unit formulation, and dosing is indication- and route-specific."},
+
+ {n:"Gonadorelin acetate", st:"ne", vials:[2], recon:{2:1}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"Human use is indication- and delivery-method specific. There is no general self-injection U-100 regimen."}
+]},
+
+{g:"Aging and bioregulator", items:[
+
+ {n:"MOTS-c", st:"ne", vials:[10,40], recon:{10:1,40:2}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"No established general human injectable dosing regimen was located."},
+
+ {n:"Epithalon / Epitalon", st:"conversation", vials:[10,20,50], recon:{10:1,20:2,50:2.5}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"Recovered setup from 28 August 2026: 20 mg plus 2 mL gives 10 mg/mL, where 5 U is 0.5 mg, 10 U is 1 mg, 20 U is 2 mg and 50 U is 5 mg. No final dose, frequency or cycle length was selected in that conversation, so the tiers stay N/E. Use the unit converter below to work with those recovered conversions."},
+
+ {n:"Thymalin", st:"ne", vials:[10], recon:{10:1}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"Older product-specific literature was insufficient for a modern vendor-vial U-100 regimen."},
+
+ {n:"FOXO4 / FOXO4-DRI", st:"ne", vials:[10], recon:{10:1}, d:{beginner:NE,standard:NE,aggressive:NE},
+  note:"Preclinical only. No human dose should be inferred."}
+]}
+];
+
+const BAC_OPTIONS = [0.25,0.5,0.75,1,1.25,1.5,2,2.5,3,3.5,4,4.5,5,6,7,8,10];
+const LADDER = []; for (let m=5; m<=100; m+=5) LADDER.push(m);
+let cur=null, level="beginner", wUnit="lb", bacTouched=false, grad=1;
+let lastUnits=null, lastMg=null;
+
+/* ---------- saved data: current vial per compound, plus a dose log ---------- */
+const KEY = "reconCalc.v1";
+let store = {mixes:{}, log:[]}, storeOK = true;
+try {
+  const raw = localStorage.getItem(KEY);
+  if (raw) { const p = JSON.parse(raw); store.mixes = p.mixes||{}; store.log = p.log||[]; }
+  localStorage.setItem(KEY+".probe","1"); localStorage.removeItem(KEY+".probe");
+} catch(e){ storeOK = false; }
+function persist(){
+  if (!storeOK) return false;
+  try { localStorage.setItem(KEY, JSON.stringify(store)); return true; } catch(e){ return false; }
+}
+function today(){ return new Date().toISOString().slice(0,10); }
+function daysSince(iso){
+  const d = Math.floor((Date.parse(today()) - Date.parse(iso)) / 86400000);
+  return isFinite(d) ? d : 0;
+}
+function dayText(n){ return n===0 ? "today" : n===1 ? "yesterday" : n+" days ago"; }
+const $ = id => document.getElementById(id);
+const flat = [];
+DATA.forEach(g => g.items.forEach(it => { it.group = g.g; flat.push(it); }));
+
+(function(){
+  const sel = $("compound");
+  DATA.forEach(g => {
+    const og = document.createElement("optgroup"); og.label = g.g;
+    g.items.forEach(it => {
+      const o = document.createElement("option");
+      o.value = flat.indexOf(it); o.textContent = it.n; og.appendChild(o);
+    });
+    sel.appendChild(og);
+  });
+})();
+
+(function(){
+  const g = $("ticks"), x0 = 52, x1 = 324;
+  for (let u = 0; u <= 100; u += 2){
+    const x = x0 + (x1-x0)*u/100, major = u % 10 === 0;
+    const t = document.createElementNS("http://www.w3.org/2000/svg","line");
+    t.setAttribute("x1",x); t.setAttribute("x2",x); t.setAttribute("y1",28);
+    t.setAttribute("y2", major?40:34);
+    t.setAttribute("stroke", major?"#9FB3C8":"#546679");
+    t.setAttribute("stroke-width", major?1.1:0.7);
+    g.appendChild(t);
+    if (major){
+      const l = document.createElementNS("http://www.w3.org/2000/svg","text");
+      l.setAttribute("x",x); l.setAttribute("y",84); l.setAttribute("text-anchor","middle");
+      l.setAttribute("font-size","9.5"); l.setAttribute("fill","#8A9CB0");
+      l.setAttribute("font-family","ui-monospace,Menlo,Consolas,monospace");
+      l.textContent = u; g.appendChild(l);
+    }
+  }
+})();
+
+/* Water volume for a strength the sheet does not list: match the concentration of
+   the nearest strength it does list. The v3 sheet used exactly this move to derive
+   GHK-Cu 50 mg + 1.5 mL from the recovered 100 mg + 3 mL setup. */
+function derivedMl(mg){
+  if (!cur || !cur.recon || !cur.vials.length) return 1;
+  let near = cur.vials[0], best = Infinity;
+  cur.vials.forEach(v => { const d = Math.abs(v-mg); if (d < best){ best = d; near = v; } });
+  const conc = near / cur.recon[near];
+  if (!isFinite(conc) || conc <= 0) return 1;
+  const raw = mg / conc;
+  let pick = BAC_OPTIONS[0], gap = Infinity;
+  BAC_OPTIONS.forEach(o => { const d = Math.abs(o-raw); if (d < gap){ gap = d; pick = o; } });
+  return pick;
+}
+function onSheet(mg){ return !!cur && cur.vials.indexOf(mg) !== -1; }
+
+function vialMg(){
+  if (!cur) return 0;
+  if ($("vial").value === "custom") return parseFloat($("customMg").value) || 0;
+  return parseFloat($("vial").value) || 0;
+}
+function compMg(){
+  const v = vialMg();
+  if (!cur) return v;
+  if (cur.comp && cur.comp[v] !== undefined) return cur.comp[v];
+  if (cur.parts) return v / cur.parts;
+  return v;
+}
+function bacMl(){ return parseFloat($("bac").value) || 0; }
+function weightKg(){
+  const w = parseFloat($("weight").value) || 0;
+  return wUnit === "lb" ? w*0.45359237 : w;
+}
+function fmt(n,dp){ return isFinite(n) ? (+n.toFixed(dp)).toString() : "—"; }
+function mgText(mg){
+  if (!isFinite(mg)) return "—";
+  return mg < 1 ? fmt(mg*1000,1)+" mcg" : fmt(mg,3)+" mg";
+}
+function schedFor(lv){
+  if (!cur || !cur.sched) return "";
+  return typeof cur.sched === "string" ? cur.sched : (cur.sched[lv] || "");
+}
+
+function loadCompound(){
+  cur = flat[+$("compound").value];
+  bacTouched = false;
+
+  const s = STATUS[cur.st];
+  $("evidence").className = "evidence " + s.cls;
+  $("evidence").innerHTML = "<strong>"+s.label+"</strong>"+s.text;
+
+  const vs = $("vial"); vs.innerHTML = "";
+  if (cur.vials.length){
+    const g1 = document.createElement("optgroup"); g1.label = "On your sheet";
+    cur.vials.forEach(v => {
+      const o = document.createElement("option");
+      o.value = v;
+      o.textContent = (cur.vialLabels && cur.vialLabels[v]) ? cur.vialLabels[v] : v+" mg";
+      g1.appendChild(o);
+    });
+    vs.appendChild(g1);
+  }
+  const g2 = document.createElement("optgroup"); g2.label = "Other strengths";
+  LADDER.filter(m => !onSheet(m)).forEach(m => {
+    const o = document.createElement("option");
+    o.value = m;
+    o.textContent = m+" mg" + (cur.parts ? "  ("+fmt(m/cur.parts,2)+" mg each)" : "");
+    g2.appendChild(o);
+  });
+  const oc = document.createElement("option");
+  oc.value = "custom"; oc.textContent = cur.unverified ? "Enter verified strength" : "Something else";
+  g2.appendChild(oc);
+  vs.appendChild(g2);
+  if (cur.unverified) vs.value = "custom";
+
+  $("weightField").classList.toggle("hide", !cur.perKg);
+
+  ["beginner","standard","aggressive"].forEach((lv,i) => {
+    const b = $("strength").children[i];
+    const has = cur.d[lv] !== NE && cur.d[lv] !== undefined;
+    b.querySelector("small").textContent = has ? (schedFor(lv) ? schedFor(lv).split(",")[0] : "") : "not established";
+    b.classList.toggle("dim", !has);
+  });
+
+  $("noteBody").innerHTML = "<p>"+cur.note+"</p>";
+  if (cur.hist) $("revU").value = cur.hist.units;
+
+  const saved = store.mixes[cur.n];
+  if (saved){
+    const v = $("vial");
+    if ([...v.options].some(o => +o.value === saved.mg)) v.value = saved.mg;
+    else { v.value = "custom"; $("customMg").value = saved.mg; }
+    if (saved.level) {
+      level = saved.level;
+      [...$("strength").children].forEach(x => x.setAttribute("aria-pressed", x.dataset.level === level));
+    }
+    onVialChange();
+    if (BAC_OPTIONS.includes(saved.ml)){ $("bac").value = saved.ml; bacTouched = true; calc(); }
+  } else {
+    onVialChange();
+  }
+  renderHistory();
+}
+
+function onVialChange(){
+  $("customWrap").hidden = $("vial").value !== "custom";
+  const mg = vialMg(), keep = $("bac").value;
+  const want = (cur.recon && cur.recon[mg]) || derivedMl(mg);
+  const sel = $("bac"); sel.innerHTML = "";
+  BAC_OPTIONS.forEach(v => {
+    const o = document.createElement("option");
+    o.value = v;
+    o.textContent = v.toFixed(1)+" mL" + (mg>0 ? "  ("+fmt(mg/v,2)+" mg/mL)" : "");
+    sel.appendChild(o);
+  });
+  sel.value = (bacTouched && keep && BAC_OPTIONS.includes(+keep)) ? keep : want;
+  if (!sel.value) sel.value = want;
+  calc();
+}
+
+function calc(){
+  if (!cur) return;
+  const mg = vialMg(), ml = bacMl(), base = compMg();
+  const conc = ml>0 ? mg/ml : 0;
+  const compConc = ml>0 ? base/ml : 0;
+
+  $("concHint").textContent = (mg>0 && ml>0)
+    ? "Add "+fmt(ml,2)+" mL to the "+fmt(mg,2)+" mg vial for "+fmt(conc,2)+" mg/mL"
+      + (cur.comp ? ", which is "+fmt(compConc,2)+" mg/mL of "+cur.compName+"." : ".")
+    : "";
+
+  $("sConc").textContent = conc>0 ? fmt(conc,2)+" mg/mL" : "—";
+  $("sPerU").textContent = compConc>0
+    ? mgText(compConc/100) + (cur.comp ? " each" : "")
+    : "—";
+
+  let raw = cur.d[level], doseMg = null, fixedU = null, neReason = null;
+  if (raw === NE || raw === undefined){
+    neReason = (cur.neReason && cur.neReason[level]) || null;
+  } else if (typeof raw === "object" && raw.u !== undefined){
+    fixedU = raw.u;
+    doseMg = compConc>0 ? (fixedU/100)*compConc : null;
+  } else if (cur.perKg){
+    const kg = weightKg();
+    doseMg = kg>0 ? (cur.perKg === "mcg" ? raw*kg/1000 : raw*kg) : null;
+  } else {
+    doseMg = raw;
+  }
+
+  const flags = [];
+  let units = null;
+  lastUnits = null; lastMg = null;
+  if (fixedU !== null && base>0 && ml>0) units = fixedU;
+  else if (typeof doseMg === "number" && doseMg>0 && base>0 && ml>0) units = (doseMg/base)*(ml*100);
+
+  if (units !== null && isFinite(units)){
+    lastUnits = units; lastMg = doseMg;
+    const vol = units/100, pct = Math.max(0,Math.min(100,units))/100;
+    $("fluid").setAttribute("width",(275*pct).toFixed(1));
+    $("stopper").setAttribute("x",(49+275*pct).toFixed(1));
+    $("fluid").setAttribute("fill", units>100 ? "#E0705E" : "#6FD2E2");
+    $("readout").classList.remove("blank");
+    $("unitsOut").className = "units" + (units>100 ? " over" : "");
+    $("unitsOut").innerHTML = fmt(units,1)+"<span>units</span>";
+    const snap = Math.round(units/grad)*grad;
+    $("drawOut").textContent = units>100
+      ? "This does not fit in one 1 mL syringe."
+      : "Draw to the "+fmt(snap,1)+" unit mark, which is "+fmt(vol,3)+" mL.";
+
+    $("sDose").textContent = mgText(doseMg) + (cur.perComp ? " each" : "");
+    $("sVial").textContent = fmt(base/doseMg,1) + (schedFor(level) ? " ("+schedFor(level)+")" : "");
+
+    if (units>100) flags.push(["stop","At "+fmt(units,1)+" units this exceeds a 1 mL U-100 syringe. Mix in less water to raise the concentration, or split it across two injections."]);
+    else if (units<2) flags.push(["warn","At "+fmt(units,1)+" units this sits below reliable graduation on most U-100 syringes. More water lowers the concentration and moves the dose further up the barrel."]);
+    if (fixedU !== null) flags.push(["info","Your sheet records this as a fixed "+fixedU+" U nightly amount rather than a milligram target. The milligram figure above is what "+fixedU+" U carries at the vial and water currently selected."]);
+  } else {
+    $("fluid").setAttribute("width",0);
+    $("stopper").setAttribute("x",49);
+    $("readout").classList.add("blank");
+    $("unitsOut").className = "units blank";
+    $("unitsOut").innerHTML = "—<span>units</span>";
+    $("sDose").textContent = "—";
+    $("sVial").textContent = "—";
+    if (cur.perKg && typeof raw === "number" && weightKg()<=0){
+      $("drawOut").textContent = "Enter your body weight.";
+    } else if (cur.unverified && mg<=0){
+      $("drawOut").textContent = "Enter a verified strength.";
+      flags.push(["warn", cur.note]);
+    } else {
+      $("drawOut").textContent = "No established dose at this level.";
+      flags.push(["info",(neReason ? neReason+" " : "")+cur.note]);
+    }
+  }
+  if (mg>0 && cur.vials.length && !onSheet(mg) && $("vial").value !== "custom")
+    flags.push(["info","This strength is not one your sheet lists for "+cur.n+". The water volume was derived to match the concentration of the nearest strength that is, which is the same move your sheet used to get GHK-Cu 50 mg from the recovered 100 mg setup."]);
+  if (ml>3) flags.push(["warn",fmt(ml,2)+" mL is more than many peptide vials hold. Check the vial's capacity before drawing water into it, or use less water at a higher concentration."]);
+  if (cur.unverified) flags.push(["warn","Vial strength is not verified in your sheet. Confirm the actual milligrams with the vendor before trusting any figure here."]);
+  if (cur.hist) flags.push(["info","History on your sheet: "+cur.hist.label+". The converter below turns that into milligrams at whatever mix you select."]);
+
+  $("flags").innerHTML = flags.map(f => '<div class="flag flag-'+f[0]+'">'+f[1]+"</div>").join("");
+  renderStrip(); syncButtons(); reverse();
+}
+
+/* ---------- current vial, dose log ---------- */
+function mixKey(){ return cur ? cur.n : ""; }
+
+function renderStrip(){
+  const el = $("vialStrip"), m = store.mixes[mixKey()];
+  if (!m){ el.innerHTML = ""; return; }
+  const age = daysSince(m.date);
+  const used = store.log
+    .filter(e => e.c === mixKey() && e.mix === m.date)
+    .reduce((a,e) => a + (e.mg||0) * (e.parts||1), 0);
+  const left = m.mg - used;
+  const doses = store.log.filter(e => e.c === mixKey() && e.mix === m.date).length;
+  el.innerHTML =
+    '<div class="strip'+(age>28?" stale":"")+'">'
+    + '<b>'+fmt(m.mg,2)+' mg in '+fmt(m.ml,2)+' mL, giving '+fmt(m.mg/m.ml,2)+' mg/mL</b>'
+    + '<div class="sub">Mixed '+dayText(age)+' on '+m.date+'.'
+    + (doses ? ' '+doses+' dose'+(doses===1?"":"s")+' logged, about '+fmt(Math.max(0,left),2)+' mg left.' : ' No doses logged from it yet.')
+    + (age>28 ? ' This vial has been reconstituted over four weeks.' : '')
+    + '</div>'
+    + '<button type="button" id="btnClearMix">Clear this vial</button></div>';
+  const b = $("btnClearMix");
+  if (b) b.onclick = () => { delete store.mixes[mixKey()]; persist(); renderStrip(); syncButtons(); };
+}
+
+function syncButtons(){
+  const m = store.mixes[mixKey()], mg = vialMg(), ml = bacMl();
+  const match = m && Math.abs(m.mg-mg)<1e-9 && Math.abs(m.ml-ml)<1e-9;
+  const btn = $("btnMix");
+  btn.classList.toggle("on", !!match);
+  btn.textContent = match ? "This is my current vial" : "Set as my current vial";
+  btn.disabled = !(mg>0 && ml>0) || !storeOK;
+  $("btnLog").disabled = lastUnits===null || !storeOK;
+}
+
+function renderHistory(){
+  const rows = store.log.filter(e => e.c === mixKey()).slice().reverse();
+  $("histSummary").textContent = "Dose history" + (rows.length ? " ("+rows.length+")" : "");
+  if (!storeOK){
+    $("histBody").innerHTML = "<p>This browser is not allowing saved data, so nothing can be stored. Opening the app from a web address rather than straight off the file system usually fixes it.</p>";
+    return;
+  }
+  if (!rows.length){
+    $("histBody").innerHTML = "<p>Nothing logged for "+(cur?cur.n:"this")+" yet. Log this dose records the date, the units drawn, and the vial they came from, so a unit figure never loses the concentration behind it.</p>";
+    return;
+  }
+  $("histBody").innerHTML = rows.map(e =>
+    '<div class="logrow"><div><div class="what">'+fmt(e.u,1)+' U, '+mgText(e.mg)+(e.parts>1?" each":"")+'</div>'
+    + '<div class="when">'+e.date+', '+e.level+', from '+fmt(e.vmg,2)+' mg in '+fmt(e.vml,2)+' mL</div></div>'
+    + '<button type="button" data-id="'+e.id+'" aria-label="Delete entry">&times;</button></div>').join("");
+  $("histBody").querySelectorAll("button[data-id]").forEach(b => {
+    b.onclick = () => {
+      store.log = store.log.filter(x => x.id !== b.dataset.id);
+      persist(); renderHistory(); renderStrip();
+    };
+  });
+}
+
+function reverse(){
+  const u = parseFloat($("revU").value);
+  const ml = bacMl(), base = compMg();
+  if (!isFinite(u) || u<=0 || ml<=0 || base<=0){ $("revOut").textContent = "—"; return; }
+  const mg = (u/100)*(base/ml);
+  $("revOut").textContent = mgText(mg) + (cur && cur.comp ? " of each" : "");
+}
+
+$("grad").addEventListener("change", e => { grad = parseFloat(e.target.value)||1; calc(); });
+
+$("btnMix").addEventListener("click", () => {
+  const mg = vialMg(), ml = bacMl();
+  if (!(mg>0 && ml>0)) return;
+  const prev = store.mixes[cur.n];
+  if (prev && prev.mg===mg && prev.ml===ml){ delete store.mixes[cur.n]; }
+  else store.mixes[cur.n] = {mg:mg, ml:ml, date:today(), level:level};
+  persist(); renderStrip(); syncButtons(); renderHistory();
+});
+
+$("btnLog").addEventListener("click", () => {
+  if (lastUnits === null) return;
+  const mg = vialMg(), ml = bacMl();
+  const m = store.mixes[cur.n];
+  store.log.push({
+    id: Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+    c: cur.n, date: today(), u: +lastUnits.toFixed(2), mg: lastMg,
+    parts: cur.parts || (cur.comp ? 2 : 1),
+    level: level, vmg: mg, vml: ml, mix: m ? m.date : null
+  });
+  persist(); renderHistory(); renderStrip();
+  $("histWrap").open = true;
+});
+
+$("btnExport").addEventListener("click", () => {
+  $("ioBox").value = JSON.stringify(store);
+  $("ioMsg").textContent = store.log.length + " logged dose" + (store.log.length===1?"":"s")
+    + " and " + Object.keys(store.mixes).length + " saved vial"
+    + (Object.keys(store.mixes).length===1?"":"s") + ". Copy all of it to keep a backup.";
+});
+
+$("btnImport").addEventListener("click", () => {
+  try {
+    const p = JSON.parse($("ioBox").value);
+    if (!p || typeof p !== "object") throw 0;
+    store.mixes = p.mixes || {}; store.log = Array.isArray(p.log) ? p.log : [];
+    persist(); loadCompound();
+    $("ioMsg").textContent = "Loaded. " + store.log.length + " dose entries restored.";
+  } catch(e){
+    $("ioMsg").textContent = "That text is not readable saved data. Paste the full block, from the opening brace to the closing one.";
+  }
+});
+
+$("btnWipe").addEventListener("click", () => {
+  if ($("btnWipe").dataset.armed){
+    store = {mixes:{}, log:[]}; persist();
+    $("btnWipe").textContent = "Erase everything"; delete $("btnWipe").dataset.armed;
+    $("ioBox").value = ""; $("ioMsg").textContent = "Erased.";
+    loadCompound();
+  } else {
+    $("btnWipe").dataset.armed = "1";
+    $("btnWipe").textContent = "Tap again to confirm";
+    $("ioMsg").textContent = "This clears every saved vial and every logged dose on this device.";
+    setTimeout(() => {
+      if ($("btnWipe").dataset.armed){
+        delete $("btnWipe").dataset.armed;
+        $("btnWipe").textContent = "Erase everything"; $("ioMsg").textContent = "";
+      }
+    }, 5000);
+  }
+});
+
+$("compound").addEventListener("change", loadCompound);
+$("vial").addEventListener("change", onVialChange);
+$("customMg").addEventListener("input", onVialChange);
+$("bac").addEventListener("change", () => { bacTouched = true; calc(); });
+$("weight").addEventListener("input", calc);
+$("revU").addEventListener("input", reverse);
+
+$("strength").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  [...$("strength").children].forEach(x => x.setAttribute("aria-pressed", x===b));
+  level = b.dataset.level; calc();
+});
+$("wUnit").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  [...$("wUnit").children].forEach(x => x.setAttribute("aria-pressed", x===b));
+  const prev = wUnit; wUnit = b.dataset.u;
+  const w = parseFloat($("weight").value)||0;
+  if (prev !== wUnit && w>0) $("weight").value = Math.round(wUnit==="kg" ? w*0.45359237 : w/0.45359237);
+  calc();
+});
+
+loadCompound();
+
+/* Offline support. Only runs when served over https; opening the file directly still works. */
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
