@@ -117,6 +117,7 @@
   .actions button:hover{border-color:var(--fluid-dim)}
   .actions button:disabled{color:#5A6B7D;cursor:not-allowed;border-color:var(--line)}
   .actions button.danger{color:#E0705E}
+  .linkish{background:none;border:none;color:var(--fluid);font-family:inherit;font-size:inherit;padding:0;cursor:pointer;text-decoration:underline}
   .actions button.on{background:var(--panel-2);border-color:var(--fluid-dim);color:var(--fluid)}
 
   .strip{
@@ -434,9 +435,10 @@ const DATA = [
   note:"Small early human study. The higher dose produced notable adverse effects in at least one subject."},
 
  {n:"PT-141 / Bremelanotide", st:"conversation", vials:[10], recon:{10:2},
-  d:{beginner:1.75, standard:1.75, aggressive:1.75},
+  d:{beginner:1.0, standard:1.75, aggressive:2.0},
   sched:{beginner:"as needed, at least 45 minutes before anticipated activity", standard:"as needed, maximum 1 dose in 24 hours", aggressive:"as needed; more than 8 doses per month is not recommended"},
-  note:"A prior calculation used 10 mg plus 2 mL for 5 mg/mL. At that concentration the FDA-labeled 1.75 mg comparator equals 35 U. No prior statement confirming personal PT-141 use was recovered, so all three tiers hold the same labeled comparator amount and differ only in timing guidance."},
+  tierNote:{aggressive:"2 mg is above the approved single dose of 1.75 mg. Nausea is the dose-limiting effect for this compound and it rises with dose, and the label also carries a transient blood-pressure increase. This tier is a personal value, not a labeled one."},
+  note:"Set at 10 mg plus 2 mL for 5 mg/mL, where 1 U is 50 mcg. At that concentration the tiers are 20 U for 1 mg, 35 U for 1.75 mg and 40 U for 2 mg. Only the 35 U middle tier matches the FDA-labeled single dose. The 20 U start and the 40 U high tier are personal values set on 6 September 2026, not label or trial amounts. The label allows one dose in 24 hours and no more than eight doses per month."},
 
  {n:"Selank", st:"ne", vials:[5,10], recon:{5:1,10:1}, d:{beginner:NE,standard:NE,aggressive:NE},
   note:"A 5 mg option was discussed as a way to round out the cycle, and 10 mg also appeared in prior material. No bacteriostatic-water amount, U-100 dose or schedule was recovered, so the tiers stay N/E rather than being invented."},
@@ -665,12 +667,15 @@ function loadCompound(){
 function onVialChange(){
   $("customWrap").hidden = $("vial").value !== "custom";
   const mg = vialMg(), keep = $("bac").value;
-  const want = (cur.recon && cur.recon[mg]) || derivedMl(mg);
+  const fromSheet = !!(cur.recon && cur.recon[mg]);
+  const want = fromSheet ? cur.recon[mg] : derivedMl(mg);
   const sel = $("bac"); sel.innerHTML = "";
   BAC_OPTIONS.forEach(v => {
     const o = document.createElement("option");
     o.value = v;
-    o.textContent = v.toFixed(1)+" mL" + (mg>0 ? "  ("+fmt(mg/v,2)+" mg/mL)" : "");
+    o.textContent = v.toFixed(2).replace(/0$/,"")+" mL"
+      + (mg>0 ? "  ("+fmt(mg/v,2)+" mg/mL)" : "")
+      + (v===want ? "  recommended" : "");
     sel.appendChild(o);
   });
   sel.value = (bacTouched && keep && BAC_OPTIONS.includes(+keep)) ? keep : want;
@@ -684,10 +689,20 @@ function calc(){
   const conc = ml>0 ? mg/ml : 0;
   const compConc = ml>0 ? base/ml : 0;
 
-  $("concHint").textContent = (mg>0 && ml>0)
+  const fromSheet = !!(cur.recon && cur.recon[mg]);
+  const want = mg>0 ? (fromSheet ? cur.recon[mg] : derivedMl(mg)) : 0;
+  const offRec = mg>0 && ml>0 && Math.abs(ml-want)>1e-9;
+  $("concHint").innerHTML = (mg>0 && ml>0)
     ? "Add "+fmt(ml,2)+" mL to the "+fmt(mg,2)+" mg vial for "+fmt(conc,2)+" mg/mL"
-      + (cur.comp ? ", which is "+fmt(compConc,2)+" mg/mL of "+cur.compName+"." : ".")
+      + (cur.comp ? ", which is "+fmt(compConc,2)+" mg/mL of "+cur.compName+". " : ". ")
+      + (offRec
+          ? "The recommended volume is "+fmt(want,2)+" mL. <button type=\"button\" id=\"btnRec\" class=\"linkish\">Use it</button>"
+          : (fromSheet
+              ? "This is the volume your sheet records for this strength."
+              : "Derived to match the concentration of the nearest strength your sheet lists."))
     : "";
+  const rb = $("btnRec");
+  if (rb) rb.onclick = () => { $("bac").value = want; bacTouched = true; calc(); };
 
   $("sConc").textContent = conc>0 ? fmt(conc,2)+" mg/mL" : "—";
   $("sPerU").textContent = compConc>0
@@ -751,6 +766,7 @@ function calc(){
       flags.push(["info",(neReason ? neReason+" " : "")+cur.note]);
     }
   }
+  if (cur.tierNote && cur.tierNote[level]) flags.push(["warn", cur.tierNote[level]]);
   if (mg>0 && cur.vials.length && !onSheet(mg) && $("vial").value !== "custom")
     flags.push(["info","This strength is not one your sheet lists for "+cur.n+". The water volume was derived to match the concentration of the nearest strength that is, which is the same move your sheet used to get GHK-Cu 50 mg from the recovered 100 mg setup."]);
   if (ml>3) flags.push(["warn",fmt(ml,2)+" mL is more than many peptide vials hold. Check the vial's capacity before drawing water into it, or use less water at a higher concentration."]);
