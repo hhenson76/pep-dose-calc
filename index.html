@@ -92,6 +92,17 @@
   .stat{background:var(--panel);padding:11px 12px}
   .stat b{display:block;font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;font-size:1rem;font-weight:600;letter-spacing:-0.01em}
   .stat span{font-size:0.74rem;color:var(--muted)}
+  .lockrow{display:flex;align-items:center;gap:9px;margin-top:11px;cursor:pointer;font-size:0.82rem;color:var(--muted)}
+  .lockrow input{width:19px;height:19px;accent-color:var(--fluid);flex:0 0 auto;margin:0}
+  .lockrow.on span{color:var(--fluid)}
+  .stat.editable{position:relative}
+  .stat.editable input{
+    width:100%;background:none;border:none;border-bottom:1px dashed var(--fluid-dim);
+    border-radius:0;padding:0 0 2px;margin-bottom:3px;
+    font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    font-size:1rem;font-weight:600;color:var(--fluid);letter-spacing:-0.01em;
+  }
+  .stat.editable input:focus{outline:none;border-bottom-color:var(--fluid)}
 
   .flag{margin-top:12px;border-radius:9px;padding:11px 13px;font-size:0.83rem;line-height:1.5}
   .flag-warn{background:rgba(232,184,75,.09);border:1px solid rgba(232,184,75,.32);color:#F0D18E}
@@ -117,13 +128,6 @@
   .actions button:hover{border-color:var(--fluid-dim)}
   .actions button:disabled{color:#5A6B7D;cursor:not-allowed;border-color:var(--line)}
   .actions button.danger{color:#E0705E}
-  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
-  .chips button{
-    background:var(--panel);border:1px solid var(--line);border-radius:20px;
-    color:var(--muted);font-family:inherit;font-size:0.78rem;padding:7px 13px;cursor:pointer;
-  }
-  .chips button.on{background:var(--panel-2);border-color:var(--fluid-dim);color:var(--fluid)}
-  .chips span{font-size:0.76rem;color:var(--muted);align-self:center;margin-right:2px}
   .linkish{background:none;border:none;color:var(--fluid);font-family:inherit;font-size:inherit;padding:0;cursor:pointer;text-decoration:underline}
   .actions button.on{background:var(--panel-2);border-color:var(--fluid-dim);color:var(--fluid)}
 
@@ -171,15 +175,19 @@
 <div class="field">
   <div class="row">
     <div>
-      <label for="vial">Vial strength in mg</label>
-      <input type="number" id="vial" min="0.01" step="0.5" inputmode="decimal" placeholder="e.g. 10">
+      <label for="vial">Vial strength</label>
+      <select id="vial"></select>
     </div>
     <div>
       <label for="bac">Water in mL</label>
       <input type="number" id="bac" min="0.05" step="0.25" inputmode="decimal" placeholder="e.g. 2">
     </div>
   </div>
-  <div id="chips" class="chips"></div>
+  <label class="lockrow"><input type="checkbox" id="bacLock"><span>Water is already mixed, do not change it</span></label>
+  <div id="customWrap" hidden>
+    <label for="customMg" style="display:block;font-size:0.8rem;color:var(--muted);margin:12px 0 7px">Vial strength in mg</label>
+    <input type="number" id="customMg" min="0.01" step="0.1" value="5" inputmode="decimal">
+  </div>
   <div class="hint" id="concHint"></div>
 </div>
 
@@ -240,7 +248,10 @@
 </div>
 
 <div class="stats">
-  <div class="stat"><b id="sConc">—</b><span>Concentration after mixing</span></div>
+  <div class="stat editable">
+    <input type="number" id="sConc" min="0.01" step="0.5" inputmode="decimal" placeholder="—">
+    <span>Concentration in mg/mL, type to set the water</span>
+  </div>
   <div class="stat"><b id="sPerU">—</b><span>Per 1 unit on the syringe</span></div>
   <div class="stat"><b id="sDose">—</b><span>Dose at this level</span></div>
   <div class="stat"><b id="sVial">—</b><span>Doses per vial</span></div>
@@ -507,7 +518,7 @@ const DATA = [
 
 const LADDER = []; for (let m=5; m<=100; m+=5) LADDER.push(m);
 let cur=null, level="beginner", wUnit="lb", bacTouched=false, grad=1;
-let lastUnits=null, lastMg=null;
+let lastUnits=null, lastMg=null, bacLocked=false;
 
 /* ---------- saved data: current vial per compound, plus a dose log ---------- */
 const KEY = "reconCalc.v1";
@@ -577,7 +588,11 @@ function derivedMl(mg){
 }
 function onSheet(mg){ return !!cur && cur.vials.indexOf(mg) !== -1; }
 
-function vialMg(){ return parseFloat($("vial").value) || 0; }
+function vialMg(){
+  if (!cur) return 0;
+  if ($("vial").value === "custom") return parseFloat($("customMg").value) || 0;
+  return parseFloat($("vial").value) || 0;
+}
 function compMg(){
   const v = vialMg();
   if (!cur) return v;
@@ -608,7 +623,7 @@ function loadCompound(){
   $("evidence").className = "evidence " + s.cls;
   $("evidence").innerHTML = "<strong>"+s.label+"</strong>"+s.text;
 
-  renderChips();
+  buildVialList();
 
   $("weightField").classList.toggle("hide", !cur.perKg);
 
@@ -624,46 +639,60 @@ function loadCompound(){
 
   const saved = store.mixes[cur.n];
   if (saved){
-    $("vial").value = saved.mg;
+    const v = $("vial");
+    if ([...v.options].some(o => +o.value === saved.mg)) v.value = saved.mg;
+    else { v.value = "custom"; $("customMg").value = saved.mg; }
+    $("customWrap").hidden = v.value !== "custom";
     $("bac").value = saved.ml;
     bacTouched = true;
+    bacLocked = saved.locked !== false;
     if (saved.level){
       level = saved.level;
       [...$("strength").children].forEach(x => x.setAttribute("aria-pressed", x.dataset.level === level));
     }
-    renderChips(); calc();
+    calc();
   } else {
     bacTouched = false;
-    $("vial").value = cur.vials.length ? cur.vials[0] : "";
+    bacLocked = false;
     onVialChange();
   }
+  syncLock();
   renderHistory();
 }
 
-function renderChips(){
-  const el = $("chips"), mg = vialMg();
-  if (!cur || !cur.vials.length){
-    el.innerHTML = cur && cur.unverified
-      ? '<span>No verified strength on your sheet. Type the mg printed on the vial.</span>'
-      : "";
-    return;
+function buildVialList(){
+  const vs = $("vial"); vs.innerHTML = "";
+  if (cur.vials.length){
+    const g1 = document.createElement("optgroup"); g1.label = "On your sheet";
+    cur.vials.forEach(v => {
+      const o = document.createElement("option");
+      o.value = v;
+      o.textContent = (cur.vialLabels && cur.vialLabels[v]) ? cur.vialLabels[v] : v+" mg";
+      g1.appendChild(o);
+    });
+    vs.appendChild(g1);
   }
-  el.innerHTML = '<span>On your sheet:</span>' + cur.vials.map(v =>
-    '<button type="button" data-mg="'+v+'"'+(Math.abs(v-mg)<1e-9?' class="on"':'')+'>'
-    + ((cur.vialLabels && cur.vialLabels[v]) ? cur.vialLabels[v] : v+" mg")
-    + '</button>').join("");
-  el.querySelectorAll("button[data-mg]").forEach(b => {
-    b.onclick = () => { $("vial").value = b.dataset.mg; bacTouched = false; onVialChange(); };
+  const g2 = document.createElement("optgroup"); g2.label = "Other strengths";
+  LADDER.filter(m => !onSheet(m)).forEach(m => {
+    const o = document.createElement("option");
+    o.value = m;
+    o.textContent = m+" mg" + (cur.parts ? "  ("+fmt(m/cur.parts,2)+" mg each)" : "");
+    g2.appendChild(o);
   });
+  const oc = document.createElement("option");
+  oc.value = "custom"; oc.textContent = cur.unverified ? "Enter verified strength" : "Something else";
+  g2.appendChild(oc);
+  vs.appendChild(g2);
+  if (cur.unverified) vs.value = "custom";
 }
 
 function onVialChange(){
+  $("customWrap").hidden = $("vial").value !== "custom";
   const mg = vialMg();
-  if (mg > 0 && !bacTouched){
+  if (mg > 0 && !bacTouched && !bacLocked){
     const rec = (cur.recon && cur.recon[mg]) ? cur.recon[mg] : derivedMl(mg);
     $("bac").value = rec;
   }
-  renderChips();
   calc();
 }
 
@@ -680,7 +709,9 @@ function calc(){
     ? "Add "+fmt(ml,2)+" mL to the "+fmt(mg,2)+" mg vial for "+fmt(conc,2)+" mg/mL"
       + (cur.comp ? ", which is "+fmt(compConc,2)+" mg/mL of "+cur.compName+". " : ". ")
       + (offRec
-          ? "The recommended volume is "+fmt(want,2)+" mL. <button type=\"button\" id=\"btnRec\" class=\"linkish\">Use it</button>"
+          ? (bacLocked
+              ? "Held at what you mixed. The recommended volume for this strength would have been "+fmt(want,2)+" mL."
+              : "The recommended volume is "+fmt(want,2)+" mL. <button type=\"button\" id=\"btnRec\" class=\"linkish\">Use it</button>")
           : (fromSheet
               ? "This is the volume your sheet records for this strength."
               : "Derived to match the concentration of the nearest strength your sheet lists."))
@@ -688,7 +719,8 @@ function calc(){
   const rb = $("btnRec");
   if (rb) rb.onclick = () => { $("bac").value = want; bacTouched = true; calc(); };
 
-  $("sConc").textContent = conc>0 ? fmt(conc,2)+" mg/mL" : "—";
+  if (document.activeElement !== $("sConc"))
+    $("sConc").value = conc>0 ? +conc.toFixed(3) : "";
   $("sPerU").textContent = compConc>0
     ? mgText(compConc/100) + (cur.comp ? " each" : "")
     : "—";
@@ -764,6 +796,11 @@ function calc(){
 /* ---------- current vial, dose log ---------- */
 function mixKey(){ return cur ? cur.n : ""; }
 
+function syncLock(){
+  $("bacLock").checked = bacLocked;
+  $("bacLock").parentElement.classList.toggle("on", bacLocked);
+}
+
 function renderStrip(){
   const el = $("vialStrip"), m = store.mixes[mixKey()];
   if (!m){ el.innerHTML = ""; return; }
@@ -833,8 +870,11 @@ $("btnMix").addEventListener("click", () => {
   if (!(mg>0 && ml>0)) return;
   const prev = store.mixes[cur.n];
   if (prev && prev.mg===mg && prev.ml===ml){ delete store.mixes[cur.n]; }
-  else store.mixes[cur.n] = {mg:mg, ml:ml, date:today(), level:level};
-  persist(); renderStrip(); syncButtons(); renderHistory();
+  else {
+    store.mixes[cur.n] = {mg:mg, ml:ml, date:today(), level:level, locked:true};
+    bacLocked = true; bacTouched = true; syncLock();
+  }
+  persist(); renderStrip(); syncButtons(); renderHistory(); calc();
 });
 
 $("btnLog").addEventListener("click", () => {
@@ -890,8 +930,28 @@ $("btnWipe").addEventListener("click", () => {
 });
 
 $("compound").addEventListener("change", loadCompound);
-$("vial").addEventListener("input", onVialChange);
-$("bac").addEventListener("input", () => { bacTouched = true; renderChips(); calc(); });
+$("bacLock").addEventListener("change", e => {
+  bacLocked = e.target.checked;
+  bacTouched = bacTouched || bacLocked;
+  const m = store.mixes[cur.n];
+  if (m){ m.locked = bacLocked; persist(); }
+  syncLock();
+  if (!bacLocked) bacTouched = false;
+  onVialChange();
+});
+
+$("vial").addEventListener("change", onVialChange);
+$("customMg").addEventListener("input", onVialChange);
+$("bac").addEventListener("input", () => { bacTouched = true; calc(); });
+
+/* Typing a concentration works backward: water = vial mg divided by that concentration. */
+$("sConc").addEventListener("input", () => {
+  const want = parseFloat($("sConc").value), mg = vialMg();
+  if (!isFinite(want) || want <= 0 || mg <= 0) return;
+  $("bac").value = +(mg/want).toFixed(3);
+  bacTouched = true;
+  calc();
+});
 $("weight").addEventListener("input", calc);
 $("revU").addEventListener("input", reverse);
 

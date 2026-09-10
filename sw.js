@@ -1,5 +1,5 @@
 /* Bump CACHE when you change index.html so installed copies pick up the new build. */
-const CACHE = "recon-calc-v3-4";
+const CACHE = "recon-calc-v3-6";
 const ASSETS = [
   "./index.html",
   "./manifest.webmanifest",
