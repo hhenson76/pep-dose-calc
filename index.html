@@ -248,12 +248,12 @@
 </div>
 
 <div class="stats">
-  <div class="stat editable">
-    <input type="number" id="sConc" min="0.01" step="0.5" inputmode="decimal" placeholder="—">
-    <span>Concentration in mg/mL, type to set the water</span>
-  </div>
+  <div class="stat"><b id="sConc">—</b><span>Concentration after mixing</span></div>
   <div class="stat"><b id="sPerU">—</b><span>Per 1 unit on the syringe</span></div>
-  <div class="stat"><b id="sDose">—</b><span>Dose at this level</span></div>
+  <div class="stat editable">
+    <input type="number" id="sDose" min="0.001" step="0.25" inputmode="decimal" placeholder="—">
+    <span id="sDoseLabel">Dose per injection in mg, type to change it</span>
+  </div>
   <div class="stat"><b id="sVial">—</b><span>Doses per vial</span></div>
 </div>
 
@@ -518,7 +518,7 @@ const DATA = [
 
 const LADDER = []; for (let m=5; m<=100; m+=5) LADDER.push(m);
 let cur=null, level="beginner", wUnit="lb", bacTouched=false, grad=1;
-let lastUnits=null, lastMg=null, bacLocked=false;
+let lastUnits=null, lastMg=null, bacLocked=false, customDose=null;
 
 /* ---------- saved data: current vial per compound, plus a dose log ---------- */
 const KEY = "reconCalc.v1";
@@ -637,6 +637,7 @@ function loadCompound(){
   $("noteBody").innerHTML = "<p>"+cur.note+"</p>";
   if (cur.hist) $("revU").value = cur.hist.units;
 
+  customDose = null;
   const saved = store.mixes[cur.n];
   if (saved){
     const v = $("vial");
@@ -719,14 +720,15 @@ function calc(){
   const rb = $("btnRec");
   if (rb) rb.onclick = () => { $("bac").value = want; bacTouched = true; calc(); };
 
-  if (document.activeElement !== $("sConc"))
-    $("sConc").value = conc>0 ? +conc.toFixed(3) : "";
+  $("sConc").textContent = conc>0 ? fmt(conc,2)+" mg/mL" : "—";
   $("sPerU").textContent = compConc>0
     ? mgText(compConc/100) + (cur.comp ? " each" : "")
     : "—";
 
   let raw = cur.d[level], doseMg = null, fixedU = null, neReason = null;
-  if (raw === NE || raw === undefined){
+  if (customDose !== null && customDose > 0){
+    doseMg = customDose;
+  } else if (raw === NE || raw === undefined){
     neReason = (cur.neReason && cur.neReason[level]) || null;
   } else if (typeof raw === "object" && raw.u !== undefined){
     fixedU = raw.u;
@@ -758,7 +760,11 @@ function calc(){
       ? "This does not fit in one 1 mL syringe."
       : "Draw to the "+fmt(snap,1)+" unit mark, which is "+fmt(vol,3)+" mL.";
 
-    $("sDose").textContent = mgText(doseMg) + (cur.perComp ? " each" : "");
+    if (document.activeElement !== $("sDose")) $("sDose").value = +doseMg.toFixed(4);
+    $("sDoseLabel").textContent = "Dose per injection in mg"
+      + (cur.perComp ? ", each component" : "")
+      + (doseMg < 1 ? ", which is "+fmt(doseMg*1000,1)+" mcg" : "")
+      + (customDose !== null ? ". Tap a dose level to go back." : ". Type to change it.");
     $("sVial").textContent = fmt(base/doseMg,1) + (schedFor(level) ? " ("+schedFor(level)+")" : "");
 
     if (units>100) flags.push(["stop","At "+fmt(units,1)+" units this exceeds a 1 mL U-100 syringe. Mix in less water to raise the concentration, or split it across two injections."]);
@@ -770,7 +776,10 @@ function calc(){
     $("readout").classList.add("blank");
     $("unitsOut").className = "units blank";
     $("unitsOut").innerHTML = "—<span>units</span>";
-    $("sDose").textContent = "—";
+    if (document.activeElement !== $("sDose")) $("sDose").value = "";
+    $("sDoseLabel").textContent = (mg>0 && ml>0)
+      ? "No tier set, but you can type a dose per injection in mg"
+      : "Dose per injection in mg";
     $("sVial").textContent = "—";
     if (cur.perKg && typeof raw === "number" && weightKg()<=0){
       $("drawOut").textContent = "Enter your body weight.";
@@ -930,6 +939,12 @@ $("btnWipe").addEventListener("click", () => {
 });
 
 $("compound").addEventListener("change", loadCompound);
+$("sDose").addEventListener("input", () => {
+  const v = parseFloat($("sDose").value);
+  customDose = (isFinite(v) && v > 0) ? v : null;
+  calc();
+});
+
 $("bacLock").addEventListener("change", e => {
   bacLocked = e.target.checked;
   bacTouched = bacTouched || bacLocked;
@@ -958,7 +973,7 @@ $("revU").addEventListener("input", reverse);
 $("strength").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   [...$("strength").children].forEach(x => x.setAttribute("aria-pressed", x===b));
-  level = b.dataset.level; calc();
+  level = b.dataset.level; customDose = null; calc();
 });
 $("wUnit").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
