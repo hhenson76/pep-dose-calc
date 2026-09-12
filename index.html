@@ -67,6 +67,7 @@
   .ev-conversation{border-left-color:var(--fluid)}
   .ev-evidence{border-left-color:var(--blue)}
   .ev-ne{border-left-color:var(--gray)}
+  .ev-community{border-left-color:var(--amber)}
 
   .readout{
     margin:22px 0 6px;background:linear-gradient(180deg,#16202C,#131C27);
@@ -96,6 +97,14 @@
   .lockrow input{width:19px;height:19px;accent-color:var(--fluid);flex:0 0 auto;margin:0}
   .lockrow.on span{color:var(--fluid)}
   .stat.editable{position:relative}
+  .doserow{display:flex;align-items:flex-end;gap:7px}
+  .doserow input{flex:1;min-width:0}
+  .utog{display:flex;gap:3px;flex:0 0 auto;margin-bottom:3px}
+  .utog button{
+    background:var(--ground);border:1px solid var(--line);border-radius:6px;
+    color:var(--muted);font-family:inherit;font-size:0.68rem;padding:4px 7px;cursor:pointer;
+  }
+  .utog button[aria-pressed=true]{border-color:var(--fluid-dim);color:var(--fluid);background:var(--panel-2)}
   .stat.editable input{
     width:100%;background:none;border:none;border-bottom:1px dashed var(--fluid-dim);
     border-radius:0;padding:0 0 2px;margin-bottom:3px;
@@ -249,10 +258,16 @@
 
 <div class="stats">
   <div class="stat"><b id="sConc">—</b><span>Concentration after mixing</span></div>
-  <div class="stat"><b id="sPerU">—</b><span>Per 1 unit on the syringe</span></div>
+  <div class="stat"><b id="sPerU">—</b><span>In each 1 unit mark, fixed by the mix</span></div>
   <div class="stat editable">
-    <input type="number" id="sDose" min="0.001" step="0.25" inputmode="decimal" placeholder="—">
-    <span id="sDoseLabel">Dose per injection in mg, type to change it</span>
+    <div class="doserow">
+      <input type="number" id="sDose" min="0.001" step="1" inputmode="decimal" placeholder="—">
+      <div class="utog" id="doseUnit">
+        <button type="button" data-u="mg" aria-pressed="true">mg</button>
+        <button type="button" data-u="mcg" aria-pressed="false">mcg</button>
+      </div>
+    </div>
+    <span id="sDoseLabel">Dose per injection, type to change it</span>
   </div>
   <div class="stat"><b id="sVial">—</b><span>Doses per vial</span></div>
 </div>
@@ -320,6 +335,8 @@ const STATUS = {
     text:"These numbers came from the sheet owner's own past notes, not from a drug label or a published trial. They describe what one individual worked out for themselves."},
   evidence:{cls:"ev-evidence", label:"From clinical evidence",
     text:"No personal protocol was recorded, so the source sheet keeps the FDA-label or published human-trial amount."},
+  community:{cls:"ev-community", label:"Community protocol, not from your sheet",
+    text:"Your sheet established no dose for this one. The figures shown come from an affiliate-funded protocol site that labels its own non-trial entries as community-derived. Treat them as a starting point to verify, not as evidence."},
   ne:{cls:"ev-ne", label:"No established dose",
     text:"The source sheet found no defensible self-injection amount and recorded none. The mixing math below still applies."}
 };
@@ -516,16 +533,48 @@ const DATA = [
 ]}
 ];
 
+
+/* ---------------------------------------------------------------
+   Community protocol tiers from peptidesexplorer.com/blog/peptide-dosage-chart,
+   read 10 Sep 2026, published 27 Feb 2026, bylined "Doctor H" with no stated
+   credentials. That site's product is a quiz that sells a personalised
+   protocol. Its beginner / standard / advanced structure matches this app's,
+   which is why it is used here. These are NOT trial doses and NOT from the
+   master sheet. Doses stored in mg. Ranges collapse to their midpoint.
+   --------------------------------------------------------------- */
+const COMM = {
+  "AOD9604":                  {d:{beginner:0.3, standard:0.5, aggressive:1}, sched:"daily, fasted", range:"300 mcg, 500 mcg, then 1 mg daily"},
+  "hGH Fragment 176-191":     {d:{beginner:0.15, standard:0.25, aggressive:0.5}, sched:"twice daily, fasted", range:"150, 250 then 500 mcg twice daily"},
+  "CJC-1295 without DAC":     {d:{beginner:0.1, standard:0.15, aggressive:0.2}, sched:"2 to 3 times daily", range:"100 mcg, 100 to 200 mcg, then 200 mcg per injection"},
+  "Ipamorelin":               {d:{beginner:0.1, standard:0.2, aggressive:0.3}, sched:"2 to 3 times daily", range:"100, 200 then 300 mcg per injection"},
+  "Sermorelin acetate":       {d:{beginner:0.1, standard:0.25, aggressive:0.5}, sched:"nightly before bed", range:"100 mcg, 200 to 300 mcg, then 500 mcg daily"},
+  "IGF-1 LR3":                {d:{beginner:0.02, standard:0.05, aggressive:0.09}, sched:"daily, post-workout", range:"20 mcg, 40 to 60 mcg, then 80 to 100 mcg daily",
+                               route:"That source names hypoglycaemia as a real risk above 60 mcg and caps cycles at 4 to 6 weeks."},
+  "DSIP":                     {d:{beginner:0.1, standard:0.2, aggressive:0.3}, sched:"nightly, 2 to 3 hours before bed", range:"100, 200 then 300 mcg nightly"},
+  "Semax":                    {d:{beginner:0.2, standard:0.4, aggressive:0.6}, sched:"daily, morning", range:"200, 400 then 600 mcg daily",
+                               route:"That source lists the route as nasal spray, not injection. Converting it to a subcutaneous dose is not something it supports."},
+  "Selank":                   {d:{beginner:0.25, standard:0.5, aggressive:0.75}, sched:"daily, morning", range:"250, 500 then 750 mcg daily",
+                               route:"That source lists the route as nasal spray, not injection. Converting it to a subcutaneous dose is not something it supports."},
+  "KPV":                      {d:{beginner:0.2, standard:0.5, aggressive:1}, sched:"daily, morning", range:"200 mcg, 500 mcg, then 1 mg daily"},
+  "Epithalon / Epitalon":     {d:{beginner:5, standard:10, aggressive:10}, sched:"nightly in 10 to 20 day cycles", range:"5 mg then 10 mg nightly, 2 to 3 short cycles a year",
+                               route:"Published dosing for this compound ranges from 2 to 10 mg daily across sources, all tracing back to one Russian research group from 2003 to 2006. There is no Western replication."},
+  "MOTS-c":                   {d:{beginner:5, standard:10, aggressive:10}, sched:"3 to 5 times weekly, morning", range:"5 mg then 10 mg per injection"},
+  "Kisspeptin-10":            {d:{beginner:1, standard:5, aggressive:10}, perKg:"mcg", sched:"research setting only", range:"1, 5 then 10 mcg per kg",
+                               route:"That source states plainly this is not a self-administration peptide and lists the setting as clinical trial only."},
+  "Tesamorelin":              {d:{beginner:1, standard:1.5, aggressive:2}, sched:"daily", range:"1 to 2 mg daily",
+                               route:"From peptidedosingprotocols.com, not the chart above."}
+};
+
 const LADDER = []; for (let m=5; m<=100; m+=5) LADDER.push(m);
 let cur=null, level="beginner", wUnit="lb", bacTouched=false, grad=1;
-let lastUnits=null, lastMg=null, bacLocked=false, customDose=null;
+let lastUnits=null, lastMg=null, bacLocked=false, customDose=null, doseUnit="mg";
 
 /* ---------- saved data: current vial per compound, plus a dose log ---------- */
 const KEY = "reconCalc.v1";
-let store = {mixes:{}, log:[]}, storeOK = true;
+let store = {mixes:{}, log:[], units:{}}, storeOK = true;
 try {
   const raw = localStorage.getItem(KEY);
-  if (raw) { const p = JSON.parse(raw); store.mixes = p.mixes||{}; store.log = p.log||[]; }
+  if (raw) { const p = JSON.parse(raw); store.mixes = p.mixes||{}; store.log = p.log||[]; store.units = p.units||{}; }
   localStorage.setItem(KEY+".probe","1"); localStorage.removeItem(KEY+".probe");
 } catch(e){ storeOK = false; }
 function persist(){
@@ -611,6 +660,7 @@ function mgText(mg){
   return mg < 1 ? fmt(mg*1000,1)+" mcg" : fmt(mg,3)+" mg";
 }
 function schedFor(lv){
+  if (cur && COMM[cur.n] && (cur.d[lv] === NE || cur.d[lv] === undefined)) return COMM[cur.n].sched || "";
   if (!cur || !cur.sched) return "";
   return typeof cur.sched === "string" ? cur.sched : (cur.sched[lv] || "");
 }
@@ -619,25 +669,35 @@ function loadCompound(){
   cur = flat[+$("compound").value];
   bacTouched = false;
 
-  const s = STATUS[cur.st];
+  const s = STATUS[(cur.st === "ne" && COMM[cur.n]) ? "community" : cur.st];
   $("evidence").className = "evidence " + s.cls;
   $("evidence").innerHTML = "<strong>"+s.label+"</strong>"+s.text;
 
   buildVialList();
 
-  $("weightField").classList.toggle("hide", !cur.perKg);
+  $("weightField").classList.toggle("hide", !(cur.perKg || (COMM[cur.n] && COMM[cur.n].perKg)));
 
   ["beginner","standard","aggressive"].forEach((lv,i) => {
     const b = $("strength").children[i];
-    const has = cur.d[lv] !== NE && cur.d[lv] !== undefined;
-    b.querySelector("small").textContent = has ? (schedFor(lv) ? schedFor(lv).split(",")[0] : "") : "not established";
+    const c = COMM[cur.n];
+    const has = (cur.d[lv] !== NE && cur.d[lv] !== undefined) || (c && typeof c.d[lv] === "number");
+    const viaComm = (cur.d[lv] === NE || cur.d[lv] === undefined) && c && typeof c.d[lv] === "number";
+    b.querySelector("small").textContent = viaComm ? "community" : (has ? (schedFor(lv) ? schedFor(lv).split(",")[0] : "") : "not established");
     b.classList.toggle("dim", !has);
   });
 
-  $("noteBody").innerHTML = "<p>"+cur.note+"</p>";
+  $("noteBody").innerHTML = "<p>"+cur.note+"</p>"
+    + (COMM[cur.n] ? "<p>Community protocol shown in the dose tiers: "+COMM[cur.n].range
+        + ". Source: the peptidesexplorer.com dosage chart, read 10 September 2026, bylined \"Doctor H\" with no stated credentials, on a site whose product is a paid personalised-protocol quiz. Your sheet deliberately left this compound blank.</p>" : "");
   if (cur.hist) $("revU").value = cur.hist.units;
 
   customDose = null;
+  if (store.units && store.units[cur.n]) doseUnit = store.units[cur.n];
+  else {
+    const vals = Object.values(cur.d).filter(v => typeof v === "number");
+    doseUnit = (!vals.length || Math.max.apply(null, vals) <= 1) ? "mcg" : "mg";
+  }
+  syncDoseUnit();
   const saved = store.mixes[cur.n];
   if (saved){
     const v = $("vial");
@@ -725,7 +785,12 @@ function calc(){
     ? mgText(compConc/100) + (cur.comp ? " each" : "")
     : "—";
 
-  let raw = cur.d[level], doseMg = null, fixedU = null, neReason = null;
+  const comm = COMM[cur.n] || null;
+  let raw = cur.d[level], usedComm = false;
+  if ((raw === NE || raw === undefined) && comm && typeof comm.d[level] === "number"){
+    raw = comm.d[level]; usedComm = true;
+  }
+  let doseMg = null, fixedU = null, neReason = null;
   if (customDose !== null && customDose > 0){
     doseMg = customDose;
   } else if (raw === NE || raw === undefined){
@@ -733,9 +798,10 @@ function calc(){
   } else if (typeof raw === "object" && raw.u !== undefined){
     fixedU = raw.u;
     doseMg = compConc>0 ? (fixedU/100)*compConc : null;
-  } else if (cur.perKg){
+  } else if (cur.perKg || (usedComm && comm.perKg)){
+    const per = usedComm && comm.perKg ? comm.perKg : cur.perKg;
     const kg = weightKg();
-    doseMg = kg>0 ? (cur.perKg === "mcg" ? raw*kg/1000 : raw*kg) : null;
+    doseMg = kg>0 ? (per === "mcg" ? raw*kg/1000 : raw*kg) : null;
   } else {
     doseMg = raw;
   }
@@ -760,11 +826,11 @@ function calc(){
       ? "This does not fit in one 1 mL syringe."
       : "Draw to the "+fmt(snap,1)+" unit mark, which is "+fmt(vol,3)+" mL.";
 
-    if (document.activeElement !== $("sDose")) $("sDose").value = +doseMg.toFixed(4);
-    $("sDoseLabel").textContent = "Dose per injection in mg"
+    if (document.activeElement !== $("sDose")) $("sDose").value = showDose(doseMg);
+    $("sDoseLabel").textContent = "Dose per injection"
       + (cur.perComp ? ", each component" : "")
-      + (doseMg < 1 ? ", which is "+fmt(doseMg*1000,1)+" mcg" : "")
-      + (customDose !== null ? ". Tap a dose level to go back." : ". Type to change it.");
+      + ", which is " + (doseUnit === "mcg" ? fmt(doseMg,4)+" mg" : fmt(doseMg*1000,1)+" mcg")
+      + (customDose !== null ? ". Tap a dose level to go back." : "");
     $("sVial").textContent = fmt(base/doseMg,1) + (schedFor(level) ? " ("+schedFor(level)+")" : "");
 
     if (units>100) flags.push(["stop","At "+fmt(units,1)+" units this exceeds a 1 mL U-100 syringe. Mix in less water to raise the concentration, or split it across two injections."]);
@@ -778,10 +844,10 @@ function calc(){
     $("unitsOut").innerHTML = "—<span>units</span>";
     if (document.activeElement !== $("sDose")) $("sDose").value = "";
     $("sDoseLabel").textContent = (mg>0 && ml>0)
-      ? "No tier set, but you can type a dose per injection in mg"
-      : "Dose per injection in mg";
+      ? "No dose on your sheet. Type one here in "+doseUnit+" and the syringe will fill in."
+      : "Dose per injection";
     $("sVial").textContent = "—";
-    if (cur.perKg && typeof raw === "number" && weightKg()<=0){
+    if ((cur.perKg || (comm && comm.perKg)) && typeof raw === "number" && weightKg()<=0){
       $("drawOut").textContent = "Enter your body weight.";
     } else if (cur.unverified && mg<=0){
       $("drawOut").textContent = "Enter a verified strength.";
@@ -790,6 +856,11 @@ function calc(){
       $("drawOut").textContent = "No established dose at this level.";
       flags.push(["info",(neReason ? neReason+" " : "")+cur.note]);
     }
+  }
+  if (usedComm){
+    flags.push(["warn","Your sheet records no dose for "+cur.n+" at any level. This figure is the community protocol range of "
+      + comm.range + ", published as a community tier rather than a trial dose."
+      + (comm.route ? " " + comm.route : "")]);
   }
   if (cur.tierNote && cur.tierNote[level]) flags.push(["warn", cur.tierNote[level]]);
   if (mg>0 && cur.vials.length && !onSheet(mg))
@@ -804,6 +875,13 @@ function calc(){
 
 /* ---------- current vial, dose log ---------- */
 function mixKey(){ return cur ? cur.n : ""; }
+
+function syncDoseUnit(){
+  [...$("doseUnit").children].forEach(b => b.setAttribute("aria-pressed", b.dataset.u === doseUnit));
+  $("sDose").step = doseUnit === "mcg" ? 25 : 0.25;
+}
+function showDose(mg){ return doseUnit === "mcg" ? +(mg*1000).toFixed(2) : +mg.toFixed(4); }
+function readDose(v){ return doseUnit === "mcg" ? v/1000 : v; }
 
 function syncLock(){
   $("bacLock").checked = bacLocked;
@@ -911,7 +989,7 @@ $("btnImport").addEventListener("click", () => {
   try {
     const p = JSON.parse($("ioBox").value);
     if (!p || typeof p !== "object") throw 0;
-    store.mixes = p.mixes || {}; store.log = Array.isArray(p.log) ? p.log : [];
+    store.mixes = p.mixes || {}; store.log = Array.isArray(p.log) ? p.log : []; store.units = p.units || {};
     persist(); loadCompound();
     $("ioMsg").textContent = "Loaded. " + store.log.length + " dose entries restored.";
   } catch(e){
@@ -921,7 +999,7 @@ $("btnImport").addEventListener("click", () => {
 
 $("btnWipe").addEventListener("click", () => {
   if ($("btnWipe").dataset.armed){
-    store = {mixes:{}, log:[]}; persist();
+    store = {mixes:{}, log:[], units:{}}; persist();
     $("btnWipe").textContent = "Erase everything"; delete $("btnWipe").dataset.armed;
     $("ioBox").value = ""; $("ioMsg").textContent = "Erased.";
     loadCompound();
@@ -941,7 +1019,19 @@ $("btnWipe").addEventListener("click", () => {
 $("compound").addEventListener("change", loadCompound);
 $("sDose").addEventListener("input", () => {
   const v = parseFloat($("sDose").value);
-  customDose = (isFinite(v) && v > 0) ? v : null;
+  customDose = (isFinite(v) && v > 0) ? readDose(v) : null;
+  calc();
+});
+
+$("doseUnit").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b || b.dataset.u === doseUnit) return;
+  const held = parseFloat($("sDose").value);
+  const mg = isFinite(held) && held > 0 ? readDose(held) : null;   // convert with the OLD unit
+  doseUnit = b.dataset.u;
+  syncDoseUnit();
+  if (!store.units) store.units = {};
+  store.units[cur.n] = doseUnit; persist();
+  if (mg !== null) $("sDose").value = showDose(mg);
   calc();
 });
 
