@@ -68,6 +68,7 @@
   .ev-evidence{border-left-color:var(--blue)}
   .ev-ne{border-left-color:var(--gray)}
   .ev-community{border-left-color:var(--amber)}
+  .ev-pharmacy{border-left-color:#9B8FD4}
 
   .readout{
     margin:22px 0 6px;background:linear-gradient(180deg,#16202C,#131C27);
@@ -200,6 +201,14 @@
   <div class="hint" id="concHint"></div>
 </div>
 
+<div class="field hide" id="protoField">
+  <label for="proto">Protocol</label>
+  <div class="seg" id="proto">
+    <button type="button" data-p="sheet" aria-pressed="true">My sheet<small></small></button>
+    <button type="button" data-p="alt" aria-pressed="false">Alternate<small></small></button>
+  </div>
+</div>
+
 <div class="field">
   <label for="grad">Syringe graduation</label>
   <select id="grad">
@@ -222,7 +231,7 @@
 <div class="field hide" id="weightField">
   <label for="weight">Body weight</label>
   <div class="row">
-    <div><input type="number" id="weight" min="1" step="1" value="180"></div>
+    <div><input type="number" id="weight" min="1" step="1" value="165"></div>
     <div class="seg" id="wUnit" style="max-width:130px">
       <button type="button" data-u="lb" aria-pressed="true">lb</button>
       <button type="button" data-u="kg" aria-pressed="false">kg</button>
@@ -335,6 +344,8 @@ const STATUS = {
     text:"These numbers came from the sheet owner's own past notes, not from a drug label or a published trial. They describe what one individual worked out for themselves."},
   evidence:{cls:"ev-evidence", label:"From clinical evidence",
     text:"No personal protocol was recorded, so the source sheet keeps the FDA-label or published human-trial amount."},
+  pharmacy:{cls:"ev-pharmacy", label:"Compounding pharmacy protocol",
+    text:"A licensed 503A compounding pharmacy's provider-facing protocol. Better sourced than a blog, but it is still the seller writing the schedule, and it does not cite the trial your sheet uses."},
   community:{cls:"ev-community", label:"Community protocol, not from your sheet",
     text:"Your sheet established no dose for this one. The figures shown come from an affiliate-funded protocol site that labels its own non-trial entries as community-derived. Treat them as a starting point to verify, not as evidence."},
   ne:{cls:"ev-ne", label:"No established dose",
@@ -565,9 +576,25 @@ const COMM = {
                                route:"From peptidedosingprotocols.com, not the chart above."}
 };
 
+/* Alternate published protocols that sit alongside the sheet rather than replacing it.
+   Heath switches between them with the Protocol control. Doses in mg. */
+const ALT = {
+  "ARA-290 / Cibinetide": {
+    key:"pharmacy",
+    name:"Pharmacy protocol",
+    status:"pharmacy",
+    d:{beginner:2, standard:2, aggressive:4},
+    sched:{beginner:"twice weekly, such as Monday and Thursday", standard:"twice weekly, such as Monday and Thursday", aggressive:"twice weekly after partial response"},
+    recon:{10:1},
+    note:"American Wellness Pharmacy, a 503A compounding pharmacy in Las Vegas, read 13 September 2026. Their protocol: reconstitute the 10 mg vial with 1.0 mL for 10 mg/mL, then 2 mg subcutaneously twice weekly, which is 0.2 mL or 20 units. Begin with two vials and run four to six weeks before reassessment. Escalate to 4 mg twice weekly only on partial improvement without side effects. They give reconstituted stability as 14 days refrigerated.",
+    conflict:"This is 4 mg a week. Your sheet's tiers come from the Phase 2 neuropathy trial at 4 mg daily, which is 28 mg a week, so the two protocols differ roughly sevenfold in weekly exposure. The pharmacy page does not cite that trial or explain the departure.",
+    stability:14
+  }
+};
+
 const LADDER = []; for (let m=5; m<=100; m+=5) LADDER.push(m);
 let cur=null, level="beginner", wUnit="lb", bacTouched=false, grad=1;
-let lastUnits=null, lastMg=null, bacLocked=false, customDose=null, doseUnit="mg";
+let lastUnits=null, lastMg=null, bacLocked=false, customDose=null, doseUnit="mg", proto="sheet";
 
 /* ---------- saved data: current vial per compound, plus a dose log ---------- */
 const KEY = "reconCalc.v1";
@@ -659,7 +686,15 @@ function mgText(mg){
   if (!isFinite(mg)) return "—";
   return mg < 1 ? fmt(mg*1000,1)+" mcg" : fmt(mg,3)+" mg";
 }
+function alt(){ return (cur && ALT[cur.n]) ? ALT[cur.n] : null; }
+function usingAlt(){ return proto === "alt" && !!alt(); }
+function doseSet(){ return usingAlt() ? alt().d : cur.d; }
+
 function schedFor(lv){
+  if (usingAlt()){
+    const a = alt();
+    return typeof a.sched === "string" ? a.sched : (a.sched[lv] || "");
+  }
   if (cur && COMM[cur.n] && (cur.d[lv] === NE || cur.d[lv] === undefined)) return COMM[cur.n].sched || "";
   if (!cur || !cur.sched) return "";
   return typeof cur.sched === "string" ? cur.sched : (cur.sched[lv] || "");
@@ -669,7 +704,7 @@ function loadCompound(){
   cur = flat[+$("compound").value];
   bacTouched = false;
 
-  const s = STATUS[(cur.st === "ne" && COMM[cur.n]) ? "community" : cur.st];
+  const s = STATUS[usingAlt() ? alt().status : ((cur.st === "ne" && COMM[cur.n]) ? "community" : cur.st)];
   $("evidence").className = "evidence " + s.cls;
   $("evidence").innerHTML = "<strong>"+s.label+"</strong>"+s.text;
 
@@ -679,14 +714,16 @@ function loadCompound(){
 
   ["beginner","standard","aggressive"].forEach((lv,i) => {
     const b = $("strength").children[i];
-    const c = COMM[cur.n];
-    const has = (cur.d[lv] !== NE && cur.d[lv] !== undefined) || (c && typeof c.d[lv] === "number");
-    const viaComm = (cur.d[lv] === NE || cur.d[lv] === undefined) && c && typeof c.d[lv] === "number";
+    const c = usingAlt() ? null : COMM[cur.n];
+    const ds = doseSet();
+    const has = (ds[lv] !== NE && ds[lv] !== undefined) || (c && typeof c.d[lv] === "number");
+    const viaComm = (ds[lv] === NE || ds[lv] === undefined) && c && typeof c.d[lv] === "number";
     b.querySelector("small").textContent = viaComm ? "community" : (has ? (schedFor(lv) ? schedFor(lv).split(",")[0] : "") : "not established");
     b.classList.toggle("dim", !has);
   });
 
-  $("noteBody").innerHTML = "<p>"+cur.note+"</p>"
+  $("noteBody").innerHTML = (alt() ? "<p><b>"+alt().name+":</b> "+alt().note+"</p>" : "")
+    + "<p><b>Your sheet:</b> "+cur.note+"</p>"
     + (COMM[cur.n] ? "<p>Community protocol shown in the dose tiers: "+COMM[cur.n].range
         + ". Source: the peptidesexplorer.com dosage chart, read 10 September 2026, bylined \"Doctor H\" with no stated credentials, on a site whose product is a paid personalised-protocol quiz. Your sheet deliberately left this compound blank.</p>" : "");
   if (cur.hist) $("revU").value = cur.hist.units;
@@ -696,6 +733,15 @@ function loadCompound(){
   else {
     const vals = Object.values(cur.d).filter(v => typeof v === "number");
     doseUnit = (!vals.length || Math.max.apply(null, vals) <= 1) ? "mcg" : "mg";
+  }
+  proto = "sheet";
+  const a = ALT[cur.n];
+  $("protoField").classList.toggle("hide", !a);
+  if (a){
+    $("proto").children[1].childNodes[0].nodeValue = a.name;
+    $("proto").children[0].querySelector("small").textContent = "trial based";
+    $("proto").children[1].querySelector("small").textContent = "2 mg twice weekly";
+    [...$("proto").children].forEach(b => b.setAttribute("aria-pressed", b.dataset.p === "sheet"));
   }
   syncDoseUnit();
   const saved = store.mixes[cur.n];
@@ -751,7 +797,8 @@ function onVialChange(){
   $("customWrap").hidden = $("vial").value !== "custom";
   const mg = vialMg();
   if (mg > 0 && !bacTouched && !bacLocked){
-    const rec = (cur.recon && cur.recon[mg]) ? cur.recon[mg] : derivedMl(mg);
+    const rc = (usingAlt() && alt().recon) ? alt().recon : cur.recon;
+    const rec = (rc && rc[mg]) ? rc[mg] : derivedMl(mg);
     $("bac").value = rec;
   }
   calc();
@@ -763,8 +810,9 @@ function calc(){
   const conc = ml>0 ? mg/ml : 0;
   const compConc = ml>0 ? base/ml : 0;
 
-  const fromSheet = !!(cur.recon && cur.recon[mg]);
-  const want = mg>0 ? (fromSheet ? cur.recon[mg] : derivedMl(mg)) : 0;
+  const rc2 = (usingAlt() && alt().recon) ? alt().recon : cur.recon;
+  const fromSheet = !!(rc2 && rc2[mg]);
+  const want = mg>0 ? (fromSheet ? rc2[mg] : derivedMl(mg)) : 0;
   const offRec = mg>0 && ml>0 && Math.abs(ml-want)>1e-9;
   $("concHint").innerHTML = (mg>0 && ml>0)
     ? "Add "+fmt(ml,2)+" mL to the "+fmt(mg,2)+" mg vial for "+fmt(conc,2)+" mg/mL"
@@ -786,8 +834,8 @@ function calc(){
     : "—";
 
   const comm = COMM[cur.n] || null;
-  let raw = cur.d[level], usedComm = false;
-  if ((raw === NE || raw === undefined) && comm && typeof comm.d[level] === "number"){
+  let raw = doseSet()[level], usedComm = false;
+  if (!usingAlt() && (raw === NE || raw === undefined) && comm && typeof comm.d[level] === "number"){
     raw = comm.d[level]; usedComm = true;
   }
   let doseMg = null, fixedU = null, neReason = null;
@@ -855,6 +903,17 @@ function calc(){
     } else {
       $("drawOut").textContent = "No established dose at this level.";
       flags.push(["info",(neReason ? neReason+" " : "")+cur.note]);
+    }
+  }
+  if (usingAlt()){
+    flags.push(["info", alt().conflict]);
+    const m = store.mixes[cur.n];
+    if (alt().stability && m){
+      const age = daysSince(m.date);
+      if (age > alt().stability)
+        flags.push(["stop","That vial was mixed "+age+" days ago. This protocol gives reconstituted stability as "+alt().stability+" days."]);
+      else if (age > alt().stability - 4)
+        flags.push(["warn","That vial was mixed "+age+" days ago, against a stated "+alt().stability+" day limit. Do not reconstitute the next vial until this one is finished."]);
     }
   }
   if (usedComm){
@@ -949,6 +1008,14 @@ function reverse(){
   const mg = (u/100)*(base/ml);
   $("revOut").textContent = mgText(mg) + (cur && cur.comp ? " of each" : "");
 }
+
+$("proto").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  [...$("proto").children].forEach(x => x.setAttribute("aria-pressed", x === b));
+  proto = b.dataset.p; customDose = null;
+  if (!bacLocked) bacTouched = false;
+  onVialChange();
+});
 
 $("grad").addEventListener("change", e => { grad = parseFloat(e.target.value)||1; calc(); });
 
