@@ -210,6 +210,20 @@
 </div>
 
 <div class="field">
+  <label for="freq">Frequency</label>
+  <select id="freq">
+    <option value="7">Daily</option>
+    <option value="6">6 times a week</option>
+    <option value="5">5 times a week</option>
+    <option value="4">4 times a week</option>
+    <option value="3">3 times a week</option>
+    <option value="2">2 times a week</option>
+    <option value="1">Once a week</option>
+  </select>
+  <div class="hint" id="freqHint"></div>
+</div>
+
+<div class="field">
   <label for="grad">Syringe graduation</label>
   <select id="grad">
     <option value="1">Marked every 1 unit</option>
@@ -278,7 +292,7 @@
     </div>
     <span id="sDoseLabel">Dose per injection, type to change it</span>
   </div>
-  <div class="stat"><b id="sVial">—</b><span>Doses per vial</span></div>
+  <div class="stat"><b id="sVial">—</b><span id="sVialLabel">Doses per vial</span></div>
 </div>
 
 <div id="flags"></div>
@@ -594,14 +608,14 @@ const ALT = {
 
 const LADDER = []; for (let m=5; m<=100; m+=5) LADDER.push(m);
 let cur=null, level="beginner", wUnit="lb", bacTouched=false, grad=1;
-let lastUnits=null, lastMg=null, bacLocked=false, customDose=null, doseUnit="mg", proto="sheet";
+let lastUnits=null, lastMg=null, lastDays=null, bacLocked=false, customDose=null, doseUnit="mg", proto="sheet", freq=7;
 
 /* ---------- saved data: current vial per compound, plus a dose log ---------- */
 const KEY = "reconCalc.v1";
-let store = {mixes:{}, log:[], units:{}}, storeOK = true;
+let store = {mixes:{}, log:[], units:{}, freqs:{}}, storeOK = true;
 try {
   const raw = localStorage.getItem(KEY);
-  if (raw) { const p = JSON.parse(raw); store.mixes = p.mixes||{}; store.log = p.log||[]; store.units = p.units||{}; }
+  if (raw) { const p = JSON.parse(raw); store.mixes = p.mixes||{}; store.log = p.log||[]; store.units = p.units||{}; store.freqs = p.freqs||{}; }
   localStorage.setItem(KEY+".probe","1"); localStorage.removeItem(KEY+".probe");
 } catch(e){ storeOK = false; }
 function persist(){
@@ -686,6 +700,22 @@ function mgText(mg){
   if (!isFinite(mg)) return "—";
   return mg < 1 ? fmt(mg*1000,1)+" mcg" : fmt(mg,3)+" mg";
 }
+function freqFromText(t){
+  t = (t||"").toLowerCase();
+  if (!t) return 7;
+  if (t.indexOf("once weekly") > -1) return 1;
+  if (t.indexOf("twice weekly") > -1 || t.indexOf("2 to 3 times weekly") > -1 || t.indexOf("every 3 to 4 days") > -1) return 2;
+  if (t.indexOf("3 to 5 times weekly") > -1) return 4;
+  if (t.indexOf("5 days on") > -1) return 5;
+  if (t.indexOf("weekly") > -1) return 1;
+  return 7;
+}
+function freqLabel(f){ return f === 7 ? "daily" : f === 1 ? "once a week" : f + " times a week"; }
+function addDays(iso, n){
+  const d = new Date(Date.parse(iso) + n*86400000);
+  return d.toISOString().slice(0,10);
+}
+
 function alt(){ return (cur && ALT[cur.n]) ? ALT[cur.n] : null; }
 function usingAlt(){ return proto === "alt" && !!alt(); }
 function doseSet(){ return usingAlt() ? alt().d : cur.d; }
@@ -743,6 +773,8 @@ function loadCompound(){
     $("proto").children[1].querySelector("small").textContent = "2 mg twice weekly";
     [...$("proto").children].forEach(b => b.setAttribute("aria-pressed", b.dataset.p === "sheet"));
   }
+  freq = (store.freqs && store.freqs[cur.n]) ? store.freqs[cur.n] : freqFromText(schedFor(level));
+  $("freq").value = freq;
   syncDoseUnit();
   const saved = store.mixes[cur.n];
   if (saved){
@@ -879,7 +911,15 @@ function calc(){
       + (cur.perComp ? ", each component" : "")
       + ", which is " + (doseUnit === "mcg" ? fmt(doseMg,4)+" mg" : fmt(doseMg*1000,1)+" mcg")
       + (customDose !== null ? ". Tap a dose level to go back." : "");
-    $("sVial").textContent = fmt(base/doseMg,1) + (schedFor(level) ? " ("+schedFor(level)+")" : "");
+    const doses = base/doseMg;
+    $("sVial").textContent = fmt(doses,1);
+    const days = doses / freq * 7;
+    const m = store.mixes[cur.n];
+    let vl = "Doses per vial, about "+fmt(days,0)+" days at "+freqLabel(freq);
+    if (m && Math.abs(m.mg-mg)<1e-9 && Math.abs(m.ml-ml)<1e-9)
+      vl += ", empty around "+addDays(m.date, Math.round(days));
+    $("sVialLabel").textContent = vl;
+    lastDays = days;
 
     if (units>100) flags.push(["stop","At "+fmt(units,1)+" units this exceeds a 1 mL U-100 syringe. Mix in less water to raise the concentration, or split it across two injections."]);
     else if (units<2) flags.push(["warn","At "+fmt(units,1)+" units this sits below reliable graduation on most U-100 syringes. More water lowers the concentration and moves the dose further up the barrel."]);
@@ -895,6 +935,8 @@ function calc(){
       ? "No dose on your sheet. Type one here in "+doseUnit+" and the syringe will fill in."
       : "Dose per injection";
     $("sVial").textContent = "—";
+    $("sVialLabel").textContent = "Doses per vial";
+    lastDays = null;
     if ((cur.perKg || (comm && comm.perKg)) && typeof raw === "number" && weightKg()<=0){
       $("drawOut").textContent = "Enter your body weight.";
     } else if (cur.unverified && mg<=0){
@@ -908,13 +950,16 @@ function calc(){
   if (usingAlt()){
     flags.push(["info", alt().conflict]);
     const m = store.mixes[cur.n];
-    if (alt().stability && m){
+    const st = alt().stability;
+    if (st && m){
       const age = daysSince(m.date);
-      if (age > alt().stability)
-        flags.push(["stop","That vial was mixed "+age+" days ago. This protocol gives reconstituted stability as "+alt().stability+" days."]);
-      else if (age > alt().stability - 4)
-        flags.push(["warn","That vial was mixed "+age+" days ago, against a stated "+alt().stability+" day limit. Do not reconstitute the next vial until this one is finished."]);
+      if (age > st)
+        flags.push(["stop","That vial was mixed "+age+" days ago. This protocol gives reconstituted stability as "+st+" days."]);
+      else if (age > st - 4)
+        flags.push(["warn","That vial was mixed "+age+" days ago, against a stated "+st+" day limit."]);
     }
+    if (st && lastDays !== null && lastDays > st)
+      flags.push(["warn","At "+freqLabel(freq)+" this vial takes about "+fmt(lastDays,0)+" days to finish, past the "+st+" day stability figure this protocol gives. The last doses would fall outside it."]);
   }
   if (usedComm){
     flags.push(["warn","Your sheet records no dose for "+cur.n+" at any level. This figure is the community protocol range of "
@@ -929,6 +974,9 @@ function calc(){
   if (cur.hist) flags.push(["info","History on your sheet: "+cur.hist.label+". The converter below turns that into milligrams at whatever mix you select."]);
 
   $("flags").innerHTML = flags.map(f => '<div class="flag flag-'+f[0]+'">'+f[1]+"</div>").join("");
+  $("freqHint").textContent = schedFor(level)
+    ? "Your sheet describes this one as " + schedFor(level) + "."
+    : "Sets how vial life and the run-out date are worked out.";
   renderStrip(); syncButtons(); reverse();
 }
 
@@ -1017,6 +1065,13 @@ $("proto").addEventListener("click", e => {
   onVialChange();
 });
 
+$("freq").addEventListener("change", e => {
+  freq = parseInt(e.target.value, 10) || 7;
+  if (!store.freqs) store.freqs = {};
+  store.freqs[cur.n] = freq; persist();
+  calc();
+});
+
 $("grad").addEventListener("change", e => { grad = parseFloat(e.target.value)||1; calc(); });
 
 $("btnMix").addEventListener("click", () => {
@@ -1056,7 +1111,7 @@ $("btnImport").addEventListener("click", () => {
   try {
     const p = JSON.parse($("ioBox").value);
     if (!p || typeof p !== "object") throw 0;
-    store.mixes = p.mixes || {}; store.log = Array.isArray(p.log) ? p.log : []; store.units = p.units || {};
+    store.mixes = p.mixes || {}; store.log = Array.isArray(p.log) ? p.log : []; store.units = p.units || {}; store.freqs = p.freqs || {};
     persist(); loadCompound();
     $("ioMsg").textContent = "Loaded. " + store.log.length + " dose entries restored.";
   } catch(e){
@@ -1066,7 +1121,7 @@ $("btnImport").addEventListener("click", () => {
 
 $("btnWipe").addEventListener("click", () => {
   if ($("btnWipe").dataset.armed){
-    store = {mixes:{}, log:[], units:{}}; persist();
+    store = {mixes:{}, log:[], units:{}, freqs:{}}; persist();
     $("btnWipe").textContent = "Erase everything"; delete $("btnWipe").dataset.armed;
     $("ioBox").value = ""; $("ioMsg").textContent = "Erased.";
     loadCompound();
