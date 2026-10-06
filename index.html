@@ -223,25 +223,6 @@
   <div class="hint" id="freqHint"></div>
 </div>
 
-<div class="field">
-  <label for="grad">Syringe graduation</label>
-  <select id="grad">
-    <option value="1">Marked every 1 unit</option>
-    <option value="2">Marked every 2 units</option>
-    <option value="0.5">Marked every half unit</option>
-  </select>
-  <div class="hint">Sets what the app rounds the draw-to figure onto. Most 1 mL U-100 barrels are marked every 2 units.</div>
-</div>
-
-<div class="field">
-  <label for="strength">Dose level</label>
-  <div class="seg" id="strength">
-    <button type="button" data-level="beginner" aria-pressed="true">Beginner<small></small></button>
-    <button type="button" data-level="standard" aria-pressed="false">Standard<small></small></button>
-    <button type="button" data-level="aggressive" aria-pressed="false">Aggressive<small></small></button>
-  </div>
-</div>
-
 <div class="field hide" id="weightField">
   <label for="weight">Body weight</label>
   <div class="row">
@@ -333,7 +314,7 @@
   <summary>How this calculates, and how to save it to your phone</summary>
   <p><b>If this was forwarded to you:</b> this is a calculator, not a protocol. It converts a vial strength and a volume of bacteriostatic water into a mark on a syringe. The dose tiers labelled Beginner, Standard and Aggressive are copied from one person's private reference sheet — some are drug-label or trial amounts, and some are that individual's own recorded numbers, which the badge under the peptide name tells you. None of them are recommendations, and none were reviewed by a clinician for anyone else.</p>
   <p><b>Formula:</b> units = (dose ÷ vial content) × (water in mL × 100). Combination vials calculate against the individual component, not the combined milligrams, so a 5 mg + 5 mg blend is measured against 5 mg.</p>
-  <p><b>Dose levels</b> follow your sheet's Beginner, Standard and Aggressive columns. Where the sheet recovered a value from your prior conversations, that value is used ahead of the clinical-evidence tier, which is what the v3 merge was for.</p>
+  <p><b>The dose is yours to enter.</b> Type it in the dose box and everything else follows. The documented amounts from your sheet, and from any protocol loaded for that compound, are listed under "History and status for this peptide" so you can read them without the app picking one for you.</p>
   <p><b>Blank results</b> mean the sheet marked that tier N/E: no defensible self-injection amount was established and no prior conversation value was recovered. The mixing math still shows, since concentration is arithmetic.</p>
   <p><b>Portable use:</b> one self-contained file, nothing loaded from the internet. Copy it to a USB stick, a phone, or a cloud folder and it works fully offline.</p>
   <ul>
@@ -607,15 +588,15 @@ const ALT = {
 };
 
 const LADDER = []; for (let m=5; m<=100; m+=5) LADDER.push(m);
-let cur=null, level="beginner", wUnit="lb", bacTouched=false, grad=1;
+let cur=null, wUnit="lb", bacTouched=false;
 let lastUnits=null, lastMg=null, lastDays=null, bacLocked=false, customDose=null, doseUnit="mg", proto="sheet", freq=7;
 
 /* ---------- saved data: current vial per compound, plus a dose log ---------- */
 const KEY = "reconCalc.v1";
-let store = {mixes:{}, log:[], units:{}, freqs:{}}, storeOK = true;
+let store = {mixes:{}, log:[], units:{}, freqs:{}, doses:{}}, storeOK = true;
 try {
   const raw = localStorage.getItem(KEY);
-  if (raw) { const p = JSON.parse(raw); store.mixes = p.mixes||{}; store.log = p.log||[]; store.units = p.units||{}; store.freqs = p.freqs||{}; }
+  if (raw) { const p = JSON.parse(raw); store.mixes = p.mixes||{}; store.log = p.log||[]; store.units = p.units||{}; store.freqs = p.freqs||{}; store.doses = p.doses||{}; }
   localStorage.setItem(KEY+".probe","1"); localStorage.removeItem(KEY+".probe");
 } catch(e){ storeOK = false; }
 function persist(){
@@ -720,14 +701,33 @@ function alt(){ return (cur && ALT[cur.n]) ? ALT[cur.n] : null; }
 function usingAlt(){ return proto === "alt" && !!alt(); }
 function doseSet(){ return usingAlt() ? alt().d : cur.d; }
 
-function schedFor(lv){
-  if (usingAlt()){
-    const a = alt();
-    return typeof a.sched === "string" ? a.sched : (a.sched[lv] || "");
-  }
-  if (cur && COMM[cur.n] && (cur.d[lv] === NE || cur.d[lv] === undefined)) return COMM[cur.n].sched || "";
-  if (!cur || !cur.sched) return "";
-  return typeof cur.sched === "string" ? cur.sched : (cur.sched[lv] || "");
+function firstSched(x){
+  if (!x) return "";
+  return typeof x === "string" ? x : (x.standard || x.beginner || x.aggressive || "");
+}
+function schedFor(){
+  if (usingAlt()) return firstSched(alt().sched);
+  if (cur && COMM[cur.n] && !Object.values(cur.d).some(v => typeof v === "number")) return COMM[cur.n].sched || "";
+  return cur ? firstSched(cur.sched) : "";
+}
+
+/* Documented amounts, listed for reading rather than auto-applied. */
+function refList(){
+  if (!cur) return [];
+  const out = [], lab = {beginner:"Low", standard:"Mid", aggressive:"High"};
+  const push = (src, set, per, sch) => {
+    ["beginner","standard","aggressive"].forEach(k => {
+      const v = set[k];
+      if (typeof v !== "number") return;
+      const txt = per ? v + " " + per + "/kg" : (v < 1 ? (v*1000) + " mcg" : v + " mg");
+      out.push(src + " " + lab[k].toLowerCase() + ": " + txt
+        + (sch ? ", " + (typeof sch === "string" ? sch : (sch[k] || firstSched(sch))) : ""));
+    });
+  };
+  if (Object.values(cur.d).some(v => typeof v === "number")) push("Your sheet", cur.d, cur.perKg, cur.sched);
+  if (COMM[cur.n]) push("Community", COMM[cur.n].d, COMM[cur.n].perKg, COMM[cur.n].sched);
+  if (ALT[cur.n]) push(ALT[cur.n].name, ALT[cur.n].d, null, ALT[cur.n].sched);
+  return out;
 }
 
 function loadCompound(){
@@ -740,19 +740,13 @@ function loadCompound(){
 
   buildVialList();
 
-  $("weightField").classList.toggle("hide", !(cur.perKg || (COMM[cur.n] && COMM[cur.n].perKg)));
+  $("weightField").classList.add("hide");
 
-  ["beginner","standard","aggressive"].forEach((lv,i) => {
-    const b = $("strength").children[i];
-    const c = usingAlt() ? null : COMM[cur.n];
-    const ds = doseSet();
-    const has = (ds[lv] !== NE && ds[lv] !== undefined) || (c && typeof c.d[lv] === "number");
-    const viaComm = (ds[lv] === NE || ds[lv] === undefined) && c && typeof c.d[lv] === "number";
-    b.querySelector("small").textContent = viaComm ? "community" : (has ? (schedFor(lv) ? schedFor(lv).split(",")[0] : "") : "not established");
-    b.classList.toggle("dim", !has);
-  });
+  customDose = (store.doses && store.doses[cur.n]) ? store.doses[cur.n] : null;
 
-  $("noteBody").innerHTML = (alt() ? "<p><b>"+alt().name+":</b> "+alt().note+"</p>" : "")
+  const refs = refList();
+  $("noteBody").innerHTML = (refs.length ? "<p><b>Documented amounts:</b></p><ul><li>"+refs.join("</li><li>")+"</li></ul>" : "")
+    + (alt() ? "<p><b>"+alt().name+":</b> "+alt().note+"</p>" : "")
     + "<p><b>Your sheet:</b> "+cur.note+"</p>"
     + (COMM[cur.n] ? "<p>Community protocol shown in the dose tiers: "+COMM[cur.n].range
         + ". Source: the peptidesexplorer.com dosage chart, read 10 September 2026, bylined \"Doctor H\" with no stated credentials, on a site whose product is a paid personalised-protocol quiz. Your sheet deliberately left this compound blank.</p>" : "");
@@ -761,7 +755,8 @@ function loadCompound(){
   customDose = null;
   if (store.units && store.units[cur.n]) doseUnit = store.units[cur.n];
   else {
-    const vals = Object.values(cur.d).filter(v => typeof v === "number");
+    const vals = Object.values(cur.d).filter(v => typeof v === "number")
+      .concat(COMM[cur.n] ? Object.values(COMM[cur.n].d).filter(v => typeof v === "number") : []);
     doseUnit = (!vals.length || Math.max.apply(null, vals) <= 1) ? "mcg" : "mg";
   }
   proto = "sheet";
@@ -770,10 +765,10 @@ function loadCompound(){
   if (a){
     $("proto").children[1].childNodes[0].nodeValue = a.name;
     $("proto").children[0].querySelector("small").textContent = "trial based";
-    $("proto").children[1].querySelector("small").textContent = "2 mg twice weekly";
+    $("proto").children[1].querySelector("small").textContent = firstSched(a.sched).split(",")[0];
     [...$("proto").children].forEach(b => b.setAttribute("aria-pressed", b.dataset.p === "sheet"));
   }
-  freq = (store.freqs && store.freqs[cur.n]) ? store.freqs[cur.n] : freqFromText(schedFor(level));
+  freq = (store.freqs && store.freqs[cur.n]) ? store.freqs[cur.n] : freqFromText(schedFor());
   $("freq").value = freq;
   syncDoseUnit();
   const saved = store.mixes[cur.n];
@@ -785,10 +780,6 @@ function loadCompound(){
     $("bac").value = saved.ml;
     bacTouched = true;
     bacLocked = saved.locked !== false;
-    if (saved.level){
-      level = saved.level;
-      [...$("strength").children].forEach(x => x.setAttribute("aria-pressed", x.dataset.level === level));
-    }
     calc();
   } else {
     bacTouched = false;
@@ -866,25 +857,8 @@ function calc(){
     : "—";
 
   const comm = COMM[cur.n] || null;
-  let raw = doseSet()[level], usedComm = false;
-  if (!usingAlt() && (raw === NE || raw === undefined) && comm && typeof comm.d[level] === "number"){
-    raw = comm.d[level]; usedComm = true;
-  }
-  let doseMg = null, fixedU = null, neReason = null;
-  if (customDose !== null && customDose > 0){
-    doseMg = customDose;
-  } else if (raw === NE || raw === undefined){
-    neReason = (cur.neReason && cur.neReason[level]) || null;
-  } else if (typeof raw === "object" && raw.u !== undefined){
-    fixedU = raw.u;
-    doseMg = compConc>0 ? (fixedU/100)*compConc : null;
-  } else if (cur.perKg || (usedComm && comm.perKg)){
-    const per = usedComm && comm.perKg ? comm.perKg : cur.perKg;
-    const kg = weightKg();
-    doseMg = kg>0 ? (per === "mcg" ? raw*kg/1000 : raw*kg) : null;
-  } else {
-    doseMg = raw;
-  }
+  let doseMg = (customDose !== null && customDose > 0) ? customDose : null;
+  let fixedU = null;
 
   const flags = [];
   let units = null;
@@ -901,7 +875,7 @@ function calc(){
     $("readout").classList.remove("blank");
     $("unitsOut").className = "units" + (units>100 ? " over" : "");
     $("unitsOut").innerHTML = fmt(units,1)+"<span>units</span>";
-    const snap = Math.round(units/grad)*grad;
+    const snap = Math.round(units*2)/2;
     $("drawOut").textContent = units>100
       ? "This does not fit in one 1 mL syringe."
       : "Draw to the "+fmt(snap,1)+" unit mark, which is "+fmt(vol,3)+" mL.";
@@ -910,7 +884,7 @@ function calc(){
     $("sDoseLabel").textContent = "Dose per injection"
       + (cur.perComp ? ", each component" : "")
       + ", which is " + (doseUnit === "mcg" ? fmt(doseMg,4)+" mg" : fmt(doseMg*1000,1)+" mcg")
-      + (customDose !== null ? ". Tap a dose level to go back." : "");
+      + ".";
     const doses = base/doseMg;
     $("sVial").textContent = fmt(doses,1);
     const days = doses / freq * 7;
@@ -923,7 +897,7 @@ function calc(){
 
     if (units>100) flags.push(["stop","At "+fmt(units,1)+" units this exceeds a 1 mL U-100 syringe. Mix in less water to raise the concentration, or split it across two injections."]);
     else if (units<2) flags.push(["warn","At "+fmt(units,1)+" units this sits below reliable graduation on most U-100 syringes. More water lowers the concentration and moves the dose further up the barrel."]);
-    if (fixedU !== null) flags.push(["info","Your sheet records this as a fixed "+fixedU+" U nightly amount rather than a milligram target. The milligram figure above is what "+fixedU+" U carries at the vial and water currently selected."]);
+
   } else {
     $("fluid").setAttribute("width",0);
     $("stopper").setAttribute("x",49);
@@ -932,19 +906,18 @@ function calc(){
     $("unitsOut").innerHTML = "—<span>units</span>";
     if (document.activeElement !== $("sDose")) $("sDose").value = "";
     $("sDoseLabel").textContent = (mg>0 && ml>0)
-      ? "No dose on your sheet. Type one here in "+doseUnit+" and the syringe will fill in."
+      ? "Type a dose in "+doseUnit+" and the syringe fills in"
       : "Dose per injection";
     $("sVial").textContent = "—";
     $("sVialLabel").textContent = "Doses per vial";
     lastDays = null;
-    if ((cur.perKg || (comm && comm.perKg)) && typeof raw === "number" && weightKg()<=0){
-      $("drawOut").textContent = "Enter your body weight.";
-    } else if (cur.unverified && mg<=0){
+    if (cur.unverified && mg<=0){
       $("drawOut").textContent = "Enter a verified strength.";
       flags.push(["warn", cur.note]);
+    } else if (!(mg>0 && ml>0)){
+      $("drawOut").textContent = "Set the vial and water.";
     } else {
-      $("drawOut").textContent = "No established dose at this level.";
-      flags.push(["info",(neReason ? neReason+" " : "")+cur.note]);
+      $("drawOut").textContent = "Enter a dose.";
     }
   }
   if (usingAlt()){
@@ -961,12 +934,11 @@ function calc(){
     if (st && lastDays !== null && lastDays > st)
       flags.push(["warn","At "+freqLabel(freq)+" this vial takes about "+fmt(lastDays,0)+" days to finish, past the "+st+" day stability figure this protocol gives. The last doses would fall outside it."]);
   }
-  if (usedComm){
-    flags.push(["warn","Your sheet records no dose for "+cur.n+" at any level. This figure is the community protocol range of "
-      + comm.range + ", published as a community tier rather than a trial dose."
+  if (comm){
+    flags.push(["warn","Your sheet records no dose for "+cur.n+". The community protocol range is "
+      + comm.range + ", published without trial data behind it."
       + (comm.route ? " " + comm.route : "")]);
   }
-  if (cur.tierNote && cur.tierNote[level]) flags.push(["warn", cur.tierNote[level]]);
   if (mg>0 && cur.vials.length && !onSheet(mg))
     flags.push(["info","This strength is not one your sheet lists for "+cur.n+". The water volume was derived to match the concentration of the nearest strength that is, which is the same move your sheet used to get GHK-Cu 50 mg from the recovered 100 mg setup."]);
   if (ml>3) flags.push(["warn",fmt(ml,2)+" mL is more than many peptide vials hold. Check the vial's capacity before drawing water into it, or use less water at a higher concentration."]);
@@ -974,8 +946,8 @@ function calc(){
   if (cur.hist) flags.push(["info","History on your sheet: "+cur.hist.label+". The converter below turns that into milligrams at whatever mix you select."]);
 
   $("flags").innerHTML = flags.map(f => '<div class="flag flag-'+f[0]+'">'+f[1]+"</div>").join("");
-  $("freqHint").textContent = schedFor(level)
-    ? "Your sheet describes this one as " + schedFor(level) + "."
+  $("freqHint").textContent = schedFor()
+    ? "Documented as " + schedFor() + "."
     : "Sets how vial life and the run-out date are worked out.";
   renderStrip(); syncButtons(); reverse();
 }
@@ -1039,7 +1011,7 @@ function renderHistory(){
   }
   $("histBody").innerHTML = rows.map(e =>
     '<div class="logrow"><div><div class="what">'+fmt(e.u,1)+' U, '+mgText(e.mg)+(e.parts>1?" each":"")+'</div>'
-    + '<div class="when">'+e.date+', '+e.level+', from '+fmt(e.vmg,2)+' mg in '+fmt(e.vml,2)+' mL</div></div>'
+    + '<div class="when">'+e.date+', from '+fmt(e.vmg,2)+' mg in '+fmt(e.vml,2)+' mL</div></div>'
     + '<button type="button" data-id="'+e.id+'" aria-label="Delete entry">&times;</button></div>').join("");
   $("histBody").querySelectorAll("button[data-id]").forEach(b => {
     b.onclick = () => {
@@ -1060,7 +1032,7 @@ function reverse(){
 $("proto").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   [...$("proto").children].forEach(x => x.setAttribute("aria-pressed", x === b));
-  proto = b.dataset.p; customDose = null;
+  proto = b.dataset.p;
   if (!bacLocked) bacTouched = false;
   onVialChange();
 });
@@ -1072,15 +1044,13 @@ $("freq").addEventListener("change", e => {
   calc();
 });
 
-$("grad").addEventListener("change", e => { grad = parseFloat(e.target.value)||1; calc(); });
-
 $("btnMix").addEventListener("click", () => {
   const mg = vialMg(), ml = bacMl();
   if (!(mg>0 && ml>0)) return;
   const prev = store.mixes[cur.n];
   if (prev && prev.mg===mg && prev.ml===ml){ delete store.mixes[cur.n]; }
   else {
-    store.mixes[cur.n] = {mg:mg, ml:ml, date:today(), level:level, locked:true};
+    store.mixes[cur.n] = {mg:mg, ml:ml, date:today(), locked:true};
     bacLocked = true; bacTouched = true; syncLock();
   }
   persist(); renderStrip(); syncButtons(); renderHistory(); calc();
@@ -1094,7 +1064,7 @@ $("btnLog").addEventListener("click", () => {
     id: Date.now().toString(36)+Math.random().toString(36).slice(2,6),
     c: cur.n, date: today(), u: +lastUnits.toFixed(2), mg: lastMg,
     parts: cur.parts || (cur.comp ? 2 : 1),
-    level: level, vmg: mg, vml: ml, mix: m ? m.date : null
+    vmg: mg, vml: ml, mix: m ? m.date : null
   });
   persist(); renderHistory(); renderStrip();
   $("histWrap").open = true;
@@ -1111,7 +1081,7 @@ $("btnImport").addEventListener("click", () => {
   try {
     const p = JSON.parse($("ioBox").value);
     if (!p || typeof p !== "object") throw 0;
-    store.mixes = p.mixes || {}; store.log = Array.isArray(p.log) ? p.log : []; store.units = p.units || {}; store.freqs = p.freqs || {};
+    store.mixes = p.mixes || {}; store.log = Array.isArray(p.log) ? p.log : []; store.units = p.units || {}; store.freqs = p.freqs || {}; store.doses = p.doses || {};
     persist(); loadCompound();
     $("ioMsg").textContent = "Loaded. " + store.log.length + " dose entries restored.";
   } catch(e){
@@ -1121,7 +1091,7 @@ $("btnImport").addEventListener("click", () => {
 
 $("btnWipe").addEventListener("click", () => {
   if ($("btnWipe").dataset.armed){
-    store = {mixes:{}, log:[], units:{}, freqs:{}}; persist();
+    store = {mixes:{}, log:[], units:{}, freqs:{}, doses:{}}; persist();
     $("btnWipe").textContent = "Erase everything"; delete $("btnWipe").dataset.armed;
     $("ioBox").value = ""; $("ioMsg").textContent = "Erased.";
     loadCompound();
@@ -1142,6 +1112,9 @@ $("compound").addEventListener("change", loadCompound);
 $("sDose").addEventListener("input", () => {
   const v = parseFloat($("sDose").value);
   customDose = (isFinite(v) && v > 0) ? readDose(v) : null;
+  if (!store.doses) store.doses = {};
+  if (customDose !== null) store.doses[cur.n] = customDose; else delete store.doses[cur.n];
+  persist();
   calc();
 });
 
@@ -1182,11 +1155,6 @@ $("sConc").addEventListener("input", () => {
 $("weight").addEventListener("input", calc);
 $("revU").addEventListener("input", reverse);
 
-$("strength").addEventListener("click", e => {
-  const b = e.target.closest("button"); if (!b) return;
-  [...$("strength").children].forEach(x => x.setAttribute("aria-pressed", x===b));
-  level = b.dataset.level; customDose = null; calc();
-});
 $("wUnit").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   [...$("wUnit").children].forEach(x => x.setAttribute("aria-pressed", x===b));
