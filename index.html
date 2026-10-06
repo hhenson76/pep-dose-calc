@@ -589,6 +589,7 @@ const ALT = {
 
 const LADDER = []; for (let m=5; m<=100; m+=5) LADDER.push(m);
 let cur=null, wUnit="lb", bacTouched=false;
+let doseIsAuto=false, lastSrc="";
 let lastUnits=null, lastMg=null, lastDays=null, bacLocked=false, customDose=null, doseUnit="mg", proto="sheet", freq=7;
 
 /* ---------- saved data: current vial per compound, plus a dose log ---------- */
@@ -712,6 +713,37 @@ function schedFor(){
 }
 
 /* Documented amounts, listed for reading rather than auto-applied. */
+/* The documented amount to prefill the dose box with: the mid value where there
+   is one, otherwise the low, otherwise the high. Source order follows whichever
+   protocol is selected, then the sheet, then the community table. */
+function defaultDose(){
+  if (!cur) return null;
+  const pick = set => {
+    if (!set) return null;
+    const v = [set.standard, set.beginner, set.aggressive].find(x => typeof x === "number");
+    return (typeof v === "number") ? v : null;
+  };
+  let raw = null, per = null, src = "";
+  if (usingAlt()){
+    raw = pick(alt().d); src = alt().name;
+  }
+  if (raw === null){
+    raw = pick(cur.d); per = cur.perKg;
+    if (raw !== null) src = "your sheet";
+  }
+  if (raw === null && COMM[cur.n]){
+    raw = pick(COMM[cur.n].d); per = COMM[cur.n].perKg;
+    if (raw !== null) src = "the community protocol";
+  }
+  if (raw === null) return null;
+  if (per){
+    const kg = weightKg();
+    if (kg <= 0) return null;
+    raw = per === "mcg" ? raw*kg/1000 : raw*kg;
+  }
+  return {mg: raw, src: src};
+}
+
 function refList(){
   if (!cur) return [];
   const out = [], lab = {beginner:"Low", standard:"Mid", aggressive:"High"};
@@ -740,9 +772,14 @@ function loadCompound(){
 
   buildVialList();
 
-  $("weightField").classList.add("hide");
+  $("weightField").classList.toggle("hide", !(cur.perKg || (COMM[cur.n] && COMM[cur.n].perKg)));
 
-  customDose = (store.doses && store.doses[cur.n]) ? store.doses[cur.n] : null;
+  if (store.doses && store.doses[cur.n]){
+    customDose = store.doses[cur.n]; doseIsAuto = false;
+  } else {
+    const dd = defaultDose();
+    customDose = dd ? dd.mg : null; doseIsAuto = !!dd;
+  }
 
   const refs = refList();
   $("noteBody").innerHTML = (refs.length ? "<p><b>Documented amounts:</b></p><ul><li>"+refs.join("</li><li>")+"</li></ul>" : "")
@@ -857,6 +894,9 @@ function calc(){
     : "—";
 
   const comm = COMM[cur.n] || null;
+  const dd = defaultDose();
+  lastSrc = dd ? dd.src : "";
+  if (doseIsAuto && dd && (customDose === null || Math.abs(customDose - dd.mg) > 1e-9)) customDose = dd.mg;
   let doseMg = (customDose !== null && customDose > 0) ? customDose : null;
   let fixedU = null;
 
@@ -884,7 +924,7 @@ function calc(){
     $("sDoseLabel").textContent = "Dose per injection"
       + (cur.perComp ? ", each component" : "")
       + ", which is " + (doseUnit === "mcg" ? fmt(doseMg,4)+" mg" : fmt(doseMg*1000,1)+" mcg")
-      + ".";
+      + (doseIsAuto && lastSrc ? ". Filled in from " + lastSrc + ", type over it to change." : ".");
     const doses = base/doseMg;
     $("sVial").textContent = fmt(doses,1);
     const days = doses / freq * 7;
@@ -917,7 +957,8 @@ function calc(){
     } else if (!(mg>0 && ml>0)){
       $("drawOut").textContent = "Set the vial and water.";
     } else {
-      $("drawOut").textContent = "Enter a dose.";
+      $("drawOut").textContent = (cur.perKg || (comm && comm.perKg)) && weightKg()<=0
+        ? "Enter your body weight." : "Enter a dose.";
     }
   }
   if (usingAlt()){
@@ -1033,6 +1074,10 @@ $("proto").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   [...$("proto").children].forEach(x => x.setAttribute("aria-pressed", x === b));
   proto = b.dataset.p;
+  if (!(store.doses && store.doses[cur.n])){
+    const d2 = defaultDose();
+    customDose = d2 ? d2.mg : null; doseIsAuto = !!d2;
+  }
   if (!bacLocked) bacTouched = false;
   onVialChange();
 });
@@ -1112,6 +1157,7 @@ $("compound").addEventListener("change", loadCompound);
 $("sDose").addEventListener("input", () => {
   const v = parseFloat($("sDose").value);
   customDose = (isFinite(v) && v > 0) ? readDose(v) : null;
+  doseIsAuto = false;
   if (!store.doses) store.doses = {};
   if (customDose !== null) store.doses[cur.n] = customDose; else delete store.doses[cur.n];
   persist();
